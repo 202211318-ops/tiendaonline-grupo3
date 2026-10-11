@@ -155,6 +155,38 @@ El repo trae una **implementación base funcional** (scikit-learn, CPU). Ustedes
 
 ---
 
+# 📊 CÓMO AGREGAR CONTADORES A CLOUDWATCH (AWS SDK)
+
+El monitoreo es **siempre con CloudWatch**, y ustedes crean **sus propios contadores** programando con el **AWS SDK** (`PutMetricData`), en el namespace `URPOnline`. Luego los grafican y les ponen alarmas.
+
+**Desde la tienda (.NET, C#)** — igual que la fase 2 (`Services/BusinessMetrics.cs`):
+
+```csharp
+await cloudWatch.PutMetricDataAsync(new PutMetricDataRequest {
+    Namespace = "URPOnline",
+    MetricData = new List<MetricDatum> {
+        new() { MetricName = "PodsActivos",   Value = pods,  Unit = StandardUnit.Count },
+        new() { MetricName = "LatenciaChat",  Value = ms,    Unit = StandardUnit.Milliseconds }
+    }
+});
+```
+
+**Desde el ML (Python, boto3)** — ya lo hace `ml/predict.py`:
+
+```python
+import boto3
+boto3.client("cloudwatch").put_metric_data(Namespace="URPOnline", MetricData=[
+    {"MetricName": "SaturacionPredicha", "Value": 1, "Unit": "Count"},
+    {"MetricName": "SaturacionProbabilidad", "Value": prob*100, "Unit": "Percent"},
+])
+```
+
+**Credenciales sin claves:** en EKS/Fargate el pod usa un **rol IAM** (IRSA, OIDC del clúster); en la EC2, el rol de la instancia. Nunca se escriben Access Keys. El permiso mínimo es `cloudwatch:PutMetricData` restringido al namespace `URPOnline`.
+
+**Graficar y alarmar:** crea el dashboard y las alarmas **desde el YAML** (infraestructura como código), no a mano. Una alarma sobre `SaturacionPredicha` dispara el **autoescalado proactivo**.
+
+---
+
 ## 💬 [Canal del curso: GitHub Discussions](https://github.com/cortexgovernor/tiendaonline/discussions)
 
 El canal es **único para todo el curso** (el del repositorio principal): ahí se comparten dudas de la rúbrica y los desafíos, respuestas del banco de preguntas, código y soluciones a errores. No abran un Discussions aparte en su fork. **Nunca publiquen secretos** (contraseñas, claves de AWS, tokens).
