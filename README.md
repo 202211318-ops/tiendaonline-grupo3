@@ -32,9 +32,6 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 
 **Cada bloque es todo o nada.** **El alumno que no sustenta tiene nota 0**, aunque haya participado en el trabajo. La rúbrica explica qué hacer, cómo demostrarlo y dónde cambiar el código, e incluye guías y scripts.
 
-## 💬 [Canal del curso: GitHub Discussions](https://github.com/cortexgovernor/tiendaonline/discussions)
-
-Aquí pueden compartir todo: discutir las respuestas del banco de preguntas, dudas sobre la rúbrica y los desafíos, código, información, soluciones a errores y sugerencias. **Nunca publiquen secretos** (contraseñas, claves de AWS, tokens).
 
 ---
 
