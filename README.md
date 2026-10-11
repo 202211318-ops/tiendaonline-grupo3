@@ -108,6 +108,53 @@ Una **alarma** sobre `SaturacionPredicha` dispara el autoescalado **antes** de q
 
 ---
 
+# 🔧 QUÉ CONFIGURAR EN EL YAML Y QUÉ CÓDIGO CAMBIAR
+
+El código se entrega **hecho**: ustedes lo **despliegan, lo amplían y lo modifican**.
+
+## Configurar `infra/fase3-contenedores.yaml`
+
+| Parámetro | Qué pones |
+|---|---|
+| `AppNameUrl` | la URL del ALB del Ingress de EKS (la API de la tienda) |
+| `CallbackUrl` | el deep link de la app (`urponline://auth`) |
+
+**Lo que el grupo AGREGA/CAMBIA en el YAML:**
+- En **API Gateway**: el límite de solicitudes (`ThrottlingRateLimit`/`BurstLimit`) para provocar el **429**, y una ruta `/v2` para demostrar el versionado.
+- En **Cognito**: la política de contraseñas y los scopes.
+- En **EKS** (`k8s/eksctl-cluster.yaml`): la región y la versión; y para **Fargate vs. EC2**, agregar un `nodeGroups` EC2 y comparar.
+- En `k8s/deployment.yaml`: el `HorizontalPodAutoscaler` (umbral de CPU) y los `resources`.
+
+## Qué código cambiar, por paso de la rúbrica
+
+| Paso | Archivo(s) | Qué haces |
+|---|---|---|
+| Imagen Docker | `Dockerfile` | optimizas etapas y reduces el tamaño; el escaneo de ECR sin críticos |
+| EKS sobre Fargate | `k8s/eksctl-cluster.yaml` · `k8s/deployment.yaml` | despliegas y demuestras el autoescalado de pods |
+| Fargate vs. EC2 | `k8s/eksctl-cluster.yaml` | agregas un node group EC2 y comparas costo/rendimiento |
+| Blue/green | `k8s/deployment.yaml` | segunda versión + cambio de peso en el Ingress + reversión por errores |
+| Gestión de APIs | `infra/fase3-contenedores.yaml` | claves/planes/límite (429) y `/v1` |
+| App móvil + Cognito | `mobile/` (`App.tsx`, `config.ts`) | construyes el flujo de login/tokens y las pantallas |
+| Patrones de agentes / JSON | servicios de los agentes (de la fase 2) | enrutador, planificar y ejecutar, orquestador, memoria; salida JSON validada |
+| Dataset de telemetría | `ml/collect_metrics.py` | eliges qué métricas y el umbral de etiqueta |
+| Modelo de ML | `ml/train.py` | eliges el algoritmo y ajustas; reportas precisión y recall |
+| Escalado proactivo | `ml/predict.py` + alarma en el YAML | conectas la predicción al autoescalado |
+
+# 🤖 CÓMO IMPLEMENTAR EL MODELO DE ML (LO HACEN USTEDES)
+
+El repo trae una **implementación base funcional** (scikit-learn, CPU). Ustedes la **entienden, la adaptan y la interpretan**. Pasos:
+
+1. **Generen telemetría real.** Corran `pruebas/carga_stack.js` (k6) que **sube y baja** la carga, para tener minutos *saturados* y *no saturados*. Sin las dos clases, el modelo no aprende.
+2. **Armen y etiqueten el dataset.** `ml/collect_metrics.py` baja de CloudWatch las métricas de **todo el stack** (ALB p95, 5xx, RDS, SQS, Lambda) por minuto y marca `saturado=1` si el p95 superó el umbral. **Decidan ustedes** qué métricas incluir y qué umbral tiene sentido para su tienda.
+3. **Entrenen** con `ml/train.py`. Usa un RandomForest **balanceado** (la saturación es rara). La etiqueta a predecir es la saturación del **minuto siguiente** (por eso *predice*, no describe). Pueden cambiar el algoritmo por XGBoost/LightGBM o ML.NET.
+4. **Evalúen bien.** Miren **precisión y recall** sobre «saturado», no el acierto: con pocos eventos raros, un modelo que siempre dice «ok» acierta 95% y no sirve. Miren también qué **señales** anticipan la saturación (importancia de variables).
+5. **Conecten la predicción al escalado.** `ml/predict.py` publica `SaturacionPredicha` en CloudWatch y alerta por SNS; una **alarma** sobre esa métrica dispara el autoescalado **antes** de saturar. Compárenlo con el escalado por CPU (reactivo).
+6. **Interpreten.** ¿Qué señal avisa primero? ¿Con cuánta anticipación? ¿Cuál es el costo de una alarma falsa frente a una caída sin aviso? ¿Qué cambiarían en la arquitectura con lo que el modelo reveló?
+
+> **Para qué sirve:** tener un modelo que prediga el comportamiento de la plataforma y les ayude a decidir **cuándo escalar** y **cómo mejorar o rediseñar** la arquitectura. Todo en **CPU, sin GPU y sin costo**.
+
+---
+
 ## 💬 [Canal del curso: GitHub Discussions](https://github.com/cortexgovernor/tiendaonline/discussions)
 
 El canal es **único para todo el curso** (el del repositorio principal): ahí se comparten dudas de la rúbrica y los desafíos, respuestas del banco de preguntas, código y soluciones a errores. No abran un Discussions aparte en su fork. **Nunca publiquen secretos** (contraseñas, claves de AWS, tokens).
