@@ -35,6 +35,79 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 
 ---
 
+# 🚀 DESPLEGAR Y PROBAR LA FASE 3
+
+> Todo con **CloudFormation / eksctl**. EKS cobra el clúster por hora: **créalo, pruébalo, bórralo y recréalo** para la presentación.
+
+## 1. Imagen en contenedor (Docker → ECR)
+
+```bash
+# Despliega ECR + Cognito + API Gateway
+aws cloudformation deploy --stack-name urponline-fase3 \
+  --template-file infra/fase3-contenedores.yaml --capabilities CAPABILITY_IAM \
+  --parameter-overrides AppNameUrl=http://EL-ALB-DEL-INGRESS
+
+# Construye y sube la imagen al ECR (Output EcrRepoUri)
+ECR=$(aws cloudformation describe-stacks --stack-name urponline-fase3 --query "Stacks[0].Outputs[?OutputKey=='EcrRepoUri'].OutputValue" --output text)
+aws ecr get-login-password | docker login --username AWS --password-stdin ${ECR%/*}
+docker build -t $ECR:v1 .
+docker push $ECR:v1
+```
+
+## 2. EKS sobre Fargate
+
+```bash
+eksctl create cluster -f k8s/eksctl-cluster.yaml      # EKS orquesta, Fargate es el compute
+kubectl create namespace urponline
+# Reemplaza <ECR_IMAGE> por $ECR:v1 en k8s/deployment.yaml y aplica
+kubectl apply -f k8s/deployment.yaml
+kubectl get ingress -n urponline                       # te da el ALB de la tienda
+# Al terminar: eksctl delete cluster -f k8s/eksctl-cluster.yaml
+```
+
+**Fargate frente a EC2:** despliega el mismo contenedor con compute Fargate y con un node group EC2, y compara costo y rendimiento. **Blue/green:** levanta una segunda versión (otro Deployment) y cambia el peso del Ingress; si suben los 5xx, vuelve al anterior.
+
+## 3. App móvil (React Native + Cognito)
+
+```bash
+cd mobile && npm install
+# Edita config.ts con los Outputs: ApiUrl, UserPoolId, UserPoolClientId
+npm start      # Expo: escanea el QR o usa un emulador
+```
+
+La app inicia sesión con **Cognito** y consume la API `/v1` con el **JWT**. No lleva secretos; si la API falla, lo maneja sin cerrarse (caos suave).
+
+## 4. Modelo de ML: predecir y escalar proactivamente
+
+```bash
+pip install -r ml/requirements.txt
+# a) Genera carga para tener telemetría (sube y baja)
+k6 run -e BASE_URL=https://TU-TIENDA pruebas/carga_stack.js
+# b) Arma el dataset con tu telemetría y etiquétalo
+python ml/collect_metrics.py --horas 6 --p95-umbral-ms 2000 --salida ml/dataset.csv
+# c) Entrena (precisión y recall, no solo acierto)
+python ml/train.py --dataset ml/dataset.csv
+# d) Predice cada minuto → escala ANTES de saturar (contador CloudWatch + alerta SNS)
+python ml/predict.py --modelo modelo.joblib --sns-topic arn:aws:sns:...:urponline-alertas
+```
+
+Una **alarma** sobre `SaturacionPredicha` dispara el autoescalado **antes** de que sature. Herramientas open source en CPU, sin GPU: **scikit-learn** (la del repo), XGBoost/LightGBM o ML.NET.
+
+## 📁 Dónde está cada cosa en el código
+
+| Parte | Archivo |
+|---|---|
+| Imagen del contenedor | `Dockerfile` |
+| EKS sobre Fargate | `k8s/eksctl-cluster.yaml` · `k8s/deployment.yaml` (Deployment/Service/Ingress/HPA) |
+| ECR, Cognito, API Gateway (JWT, /v1, 429) | `infra/fase3-contenedores.yaml` |
+| App móvil (React Native + Cognito) | `mobile/` (`App.tsx`, `config.ts`) |
+| Dataset de telemetría | `ml/collect_metrics.py` |
+| Entrenar el modelo (CPU) | `ml/train.py` |
+| Predecir + escalado proactivo | `ml/predict.py` |
+| Carga para el dataset (k6) | `pruebas/carga_stack.js` |
+
+---
+
 ## 💬 [Canal del curso: GitHub Discussions](https://github.com/cortexgovernor/tiendaonline/discussions)
 
 El canal es **único para todo el curso** (el del repositorio principal): ahí se comparten dudas de la rúbrica y los desafíos, respuestas del banco de preguntas, código y soluciones a errores. No abran un Discussions aparte en su fork. **Nunca publiquen secretos** (contraseñas, claves de AWS, tokens).
