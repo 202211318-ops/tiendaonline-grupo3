@@ -12,6 +12,13 @@ Parameters:
     Type: String
     Default: urponline://auth
     Description: Deep link de la app React Native para el retorno de login.
+  CorreoAlertas:
+    Type: String
+    Default: ''
+    Description: Correo que recibe la alerta de saturacion predicha (vacio = sin suscripcion).
+
+Conditions:
+  HayCorreoAlertas: !Not [!Equals [!Ref CorreoAlertas, '']]
 
 Resources:
 
@@ -26,6 +33,27 @@ Resources:
           { "rules": [ { "rulePriority": 1, "description": "Conserva 10 imagenes",
             "selection": { "tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 10 },
             "action": { "type": "expire" } } ] }
+
+  # Imagen del predictor de ML (ml/Dockerfile) que corre como CronJob en EKS.
+  EcrMlRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: urponline-ml
+      ImageScanningConfiguration: { ScanOnPush: true }
+
+  # Bucket del modelo entrenado (modelo.joblib): el CronJob lo descarga en cada corrida.
+  ModelosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'urponline-modelos-${AWS::AccountId}-${AWS::Region}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
 
   # ---------- Cognito: autenticacion de la app movil ----------
   UserPool:
@@ -79,7 +107,8 @@ Resources:
       ApiId: !Ref HttpApi
       IntegrationType: HTTP_PROXY
       IntegrationMethod: ANY
-      IntegrationUri: !Sub '${AppNameUrl}/{proxy}'
+      # /v1/{proxy} de la API publica -> /api/v1/{proxy} de la tienda (Controllers/ProductsApiController.cs).
+      IntegrationUri: !Sub '${AppNameUrl}/api/v1/{proxy}'
       PayloadFormatVersion: '1.0'
 
   ApiRoute:
@@ -102,14 +131,54 @@ Resources:
         ThrottlingBurstLimit: 100
         ThrottlingRateLimit: 50
 
+  # ---------- Escalado proactivo: alerta cuando el modelo de ML predice saturacion ----------
+  # ml/predict.py publica URPOnline/SaturacionPredicha (1 = va a saturar) cada minuto.
+  AlertasTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: urponline-alertas
+
+  AlertasSuscripcion:
+    Type: AWS::SNS::Subscription
+    Condition: HayCorreoAlertas
+    Properties:
+      TopicArn: !Ref AlertasTopic
+      Protocol: email
+      Endpoint: !Ref CorreoAlertas
+
+  SaturacionPredichaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: urponline-saturacion-predicha
+      AlarmDescription: El modelo de ML predice saturacion el proximo minuto (escalado proactivo).
+      Namespace: URPOnline
+      MetricName: SaturacionPredicha
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertasTopic]
+      OKActions: [!Ref AlertasTopic]
+
 Outputs:
   EcrRepoUri:
     Description: URI del repositorio ECR (etiqueta y sube tu imagen aqui).
     Value: !GetAtt EcrRepo.RepositoryUri
+  EcrMlRepoUri:
+    Description: URI del repositorio ECR del predictor de ML.
+    Value: !GetAtt EcrMlRepo.RepositoryUri
+  ModelosBucket:
+    Description: Bucket donde subes modelo.joblib (lo lee el CronJob de prediccion).
+    Value: !Ref ModelosBucket
   UserPoolId:
     Value: !Ref UserPool
   UserPoolClientId:
     Value: !Ref UserPoolClient
+  AlertasTopicArn:
+    Description: Tema SNS de alertas (pasalo a ml/predict.py con --sns-topic).
+    Value: !Ref AlertasTopic
   ApiUrl:
     Description: URL de la API gestionada (la app consume /v1/...).
     Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/v1'

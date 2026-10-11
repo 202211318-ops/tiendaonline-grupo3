@@ -1,0 +1,68 @@
+# Fase 3 - Escalado PROACTIVO: cada minuto el modelo de ML predice si la tienda se va a saturar y, si dice
+# que si, sube el minimo de pods del HPA ANTES de que llegue la saturacion (ml/predict.py --escalar-hpa).
+# Reemplaza antes de aplicar:
+#   <ECR_ML_IMAGE>  imagen del predictor (Output EcrMlRepoUri + :v1)
+#   <ALB>           dimension LoadBalancer del ALB del Ingress, ej. app/k8s-urponlin-1a2b3c4d5e/0123456789abcdef
+#   <BUCKET>        Output ModelosBucket (ahi subes modelo.joblib)
+#   <SNS_TOPIC>     Output AlertasTopicArn
+# Permisos de AWS (CloudWatch, SNS, S3): rol IAM del ServiceAccount 'predictor' creado por eksctl (IRSA,
+# ver k8s/eksctl-cluster.yaml). Permisos de Kubernetes: este Role solo deja leer y modificar el HPA.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: predictor-hpa
+  namespace: urponline
+rules:
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    resourceNames: ["urponline"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: predictor-hpa
+  namespace: urponline
+subjects:
+  - kind: ServiceAccount
+    name: predictor
+    namespace: urponline
+roleRef:
+  kind: Role
+  name: predictor-hpa
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: predictor
+  namespace: urponline
+spec:
+  schedule: "* * * * *"              # cada minuto
+  concurrencyPolicy: Forbid          # si una corrida se demora, no se encima la siguiente
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          serviceAccountName: predictor
+          restartPolicy: Never
+          containers:
+            - name: predictor
+              image: <ECR_ML_IMAGE>
+              args:
+                - --alb=<ALB>
+                - --modelo=s3://<BUCKET>/modelo.joblib
+                - --sns-topic=<SNS_TOPIC>
+                - --escalar-hpa=urponline/urponline
+                - --min-base=2
+                - --pods-extra=2
+              env:
+                - name: AWS_REGION
+                  value: us-east-2
+              resources:
+                requests: { cpu: "250m", memory: "512Mi" }
+                limits:   { cpu: "500m", memory: "1Gi" }

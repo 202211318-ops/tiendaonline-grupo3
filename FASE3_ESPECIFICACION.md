@@ -1,31 +1,31 @@
 # Fase 3 — IA completa, apps móviles y contenedores (especificación)
 
-> Rama `fase-3`. Fecha inicial: 21 de noviembre de 2026.
-> Estado: **borrador para revisión del profesor, sin implementar.**
+> Rama `fase-3`. Presentación: 21 de noviembre de 2026. La guía paso a paso para los alumnos está en el `README.md`.
 
-## 1. Alcance (lo indicado por el profesor)
+## 1. Alcance
 
 - **Agentes completos, RAG e IA** sobre lo construido en la fase 2.
 - **Más patrones de agentes**: enrutador, planificar y ejecutar, orquestador con subagentes, humano en el ciclo y memoria.
 - **JSON en el prompt**: prompts y salidas estructuradas en JSON con esquema validado.
 - **Aplicación móvil** que consume los servicios de la tienda por **API**, con **gestión de APIs**.
-- **Aplicaciones web escalables** en contenedores.
-- **Docker, Fargate, Kubernetes (EKS) y despliegue blue/green.**
+- **Aplicaciones web escalables** en contenedores: **Docker, EKS sobre Fargate y despliegue blue/green**.
+- **Predicción con Machine Learning** de la saturación de la arquitectura y escalado proactivo.
 
-## 2. Arquitectura propuesta
+## 2. Arquitectura
 
-| Capa | Servicio |
-|---|---|
-| App móvil | Por definir con el profesor (.NET MAUI para seguir en C#, o Flutter) |
-| Gestión de APIs | Amazon API Gateway: claves de API, planes de uso, límites de solicitudes, versiones (`/v1`) y documentación OpenAPI |
-| Autenticación de la app | Por definir (Amazon Cognito es la opción nativa) |
-| API de la tienda | ASP.NET Core Web API en **Docker**: catálogo, carrito, pedidos, chat de soporte y agentes |
-| Contenedores | **ECS Fargate** detrás del ALB, con Auto Scaling por CPU y por solicitudes |
-| Kubernetes | **EKS** con el mismo contenedor, para comparar con Fargate |
-| Despliegue | **Blue/green**: la versión nueva se levanta al lado de la actual y el tráfico se cambia en el ALB sin cortar la tienda; vuelta atrás inmediata |
-| Imágenes | Amazon ECR, con escaneo de vulnerabilidades |
+| Capa | Servicio | Dónde |
+|---|---|---|
+| App móvil | **React Native (Expo)** | `mobile/` |
+| Autenticación de la app | **Amazon Cognito** (User Pool, cliente público sin secreto, SRP) | `infra/fase3-contenedores.yaml` |
+| Gestión de APIs | **API Gateway HTTP API**: autorizador JWT de Cognito, `/v1`, límite de solicitudes (429). Claves y planes de uso: REST API que agrega el grupo | `infra/fase3-contenedores.yaml` |
+| API de la tienda | ASP.NET Core: `GET /api/v1/products` y `/api/v1/products/{id}` | `Controllers/ProductsApiController.cs` |
+| Contenedores | **Docker** multietapa, usuario no root; **ECR** con escaneo | `Dockerfile` |
+| Kubernetes | **EKS sobre Fargate** dentro de la VPC de la tienda (subredes privadas de aplicación); IRSA para Secrets Manager y CloudWatch; HPA por CPU; Ingress → ALB | `k8s/eksctl-cluster.yaml`, `k8s/deployment.yaml` |
+| Fargate vs. EC2 | `managedNodeGroups` que agrega el grupo | `k8s/eksctl-cluster.yaml` |
+| Blue/green | dos versiones + pesos en el Ingress + reversión automática (Argo Rollouts u otra herramienta), lo construye el grupo | `k8s/` |
+| ML | scikit-learn en CPU: dataset de CloudWatch, horizonte de 5 min, evaluación por episodio contra persistencia; CronJob que sube el mínimo del HPA; alarma + SNS | `ml/`, `k8s/prediccion.yaml` |
 
-## 3. Patrones de agentes nuevos
+## 3. Patrones de agentes
 
 | Patrón | Uso en la tienda |
 |---|---|
@@ -41,14 +41,7 @@
 - Validación del esquema en el código; si la salida no cumple, se reintenta o se rechaza.
 - Experimento: comparar prompt en texto libre frente a prompt y salida en JSON (aciertos, errores de formato, alucinaciones, costo).
 
-## 5. Costos a planificar
+## 5. Costos
 
-- **EKS cobra por el clúster aunque no tenga carga** (aprox. 0,10 USD por hora). Definir cuándo se enciende y se apaga.
-- Fargate cobra por vCPU y memoria por segundo mientras las tareas corren.
-
-## 6. Decisiones pendientes del profesor
-
-1. Tecnología de la app móvil.
-2. Autenticación de la app (¿Cognito?).
-3. ¿EKS lo despliegan todos los grupos o se demuestra en clase por el costo?
-4. Rúbrica, banco de preguntas y requisitos.
+- **EKS cobra por el clúster aunque no tenga carga** (aprox. 0,10 USD por hora): se crea, se prueba y se borra (README, paso 10).
+- Fargate cobra por vCPU y memoria por segundo mientras los pods corren.

@@ -1,5 +1,10 @@
-# Fase 3 - Clúster EKS SOBRE Fargate, con eksctl.
+# Fase 3 - Clúster EKS SOBRE Fargate, con eksctl, DENTRO de la VPC de la tienda (pila URPOnlineLab).
 # EKS orquesta (Kubernetes); Fargate es el compute (sin nodos EC2 que gestionar).
+# Los pods corren en las subredes privadas de aplicacion (las mismas de las EC2): asi llegan a RDS y a
+# Redis, que solo aceptan trafico desde esas subredes (NACL de datos) y desde sus security groups.
+#
+# Antes de crear, reemplaza con los Outputs de la pila URPOnlineLab:
+#   <VPC_ID>  <PUBLIC_A>  <PUBLIC_B>  <APP_A>  <APP_B>  <DB_SECRET_ARN>
 # Crea:   eksctl create cluster -f k8s/eksctl-cluster.yaml
 # Borra:  eksctl delete cluster -f k8s/eksctl-cluster.yaml   (EKS cobra el clúster por hora: bórralo al terminar)
 apiVersion: eksctl.io/v1alpha5
@@ -7,19 +12,66 @@ kind: ClusterConfig
 
 metadata:
   name: urponline
-  region: us-east-1
-  version: "1.30"
+  region: us-east-2   # Ohio: la misma region del resto del curso (tienda, ECR, API Gateway, Cognito)
+  # Version con soporte estandar. Comprueba las vigentes con: aws eks describe-cluster-versions
+  version: "1.34"
 
-# Todo el namespace urponline corre en Fargate (compute serverless).
+vpc:
+  id: <VPC_ID>
+  subnets:
+    public:
+      public-a: { id: <PUBLIC_A> }
+      public-b: { id: <PUBLIC_B> }
+    private:
+      app-a: { id: <APP_A> }
+      app-b: { id: <APP_B> }
+
+# Todo el namespace urponline (y los componentes de kube-system) corre en Fargate, en las subredes privadas.
 fargateProfiles:
   - name: urponline-fp
+    subnets: [app-a, app-b]
     selectors:
       - namespace: urponline
       - namespace: kube-system
 
-# OIDC para que los pods usen roles IAM (p. ej. el AWS Load Balancer Controller y los secretos).
+# OIDC para que los pods usen roles IAM (IRSA): sin Access Keys en ningun pod.
 iam:
   withOIDC: true
+  serviceAccounts:
+    # La tienda: lee la contrasena de RDS de Secrets Manager (igual que en las EC2) y publica sus metricas.
+    - metadata: { name: urponline, namespace: urponline }
+      attachPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [secretsmanager:GetSecretValue]
+            Resource: "<DB_SECRET_ARN>"
+          - Effect: Allow
+            Action: [cloudwatch:PutMetricData]
+            Resource: "*"
+            Condition: { StringEquals: { "cloudwatch:namespace": URPOnline } }
+    # El AWS Load Balancer Controller: crea el ALB a partir del Ingress (k8s/deployment.yaml).
+    - metadata: { name: aws-load-balancer-controller, namespace: kube-system }
+      wellKnownPolicies:
+        awsLoadBalancerController: true
+    # El CronJob de prediccion (k8s/prediccion.yaml).
+    - metadata: { name: predictor, namespace: urponline }
+      attachPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [cloudwatch:GetMetricStatistics]
+            Resource: "*"
+          - Effect: Allow
+            Action: [cloudwatch:PutMetricData]
+            Resource: "*"
+            Condition: { StringEquals: { "cloudwatch:namespace": URPOnline } }
+          - Effect: Allow
+            Action: [sns:Publish]
+            Resource: "arn:aws:sns:*:*:urponline-alertas"
+          - Effect: Allow
+            Action: [s3:GetObject]
+            Resource: "arn:aws:s3:::urponline-modelos-*/*"
 
 cloudWatch:
   clusterLogging:

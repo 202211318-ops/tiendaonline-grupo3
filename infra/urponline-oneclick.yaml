@@ -490,6 +490,13 @@ Outputs:
   RedisPrimary: {Value: !GetAtt Redis.PrimaryEndPoint.Address}
   S3SupplierBucket: {Value: !Ref SupplierBucket}
   VpcId: {Value: !Ref VPC}
+  # Fase 3: EKS se crea DENTRO de esta VPC (k8s/eksctl-cluster.yaml) para llegar a RDS y Redis.
+  PublicSubnetA: {Description: Subred publica A (ALB del Ingress de EKS), Value: !Ref PublicA}
+  PublicSubnetB: {Description: Subred publica B (ALB del Ingress de EKS), Value: !Ref PublicB}
+  AppSubnetA: {Description: Subred privada de aplicacion A (pods de EKS en Fargate), Value: !Ref AppA}
+  AppSubnetB: {Description: Subred privada de aplicacion B (pods de EKS en Fargate), Value: !Ref AppB}
+  DbSecurityGroup: {Description: Security group de RDS (se le agrega el acceso desde EKS), Value: !Ref DbSG}
+  RedisSecurityGroup: {Description: Security group de Redis (se le agrega el acceso desde EKS), Value: !Ref RedisSG}
   DbSecretArn: {Description: Secreto de RDS en Secrets Manager, Value: !Ref DbSecret}
   S3EndpointId: {Description: VPC endpoint de S3 (Gateway), Value: !Ref S3Endpoint}
   DataNaclId: {Description: NACL de la subred de datos, Value: !Ref DataNacl}

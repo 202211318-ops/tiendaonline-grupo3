@@ -1,12 +1,17 @@
 // Fase 3 - App movil (React Native + Expo) que consume la API de la tienda con autenticacion Cognito.
-// Login con Amazon Cognito (SRP) + el token JWT se manda en Authorization a la API /v1.
+// Login con Amazon Cognito (SRP) + el access token (JWT) se manda como "Bearer" a la API /v1.
 // El grupo construye encima su propia integracion (manejo de tokens, refresh, pantallas).
+// Polyfill de numeros aleatorios seguros: amazon-cognito-identity-js lo necesita en React Native/Expo (va primero).
+import "react-native-get-random-values";
 import React, { useEffect, useState } from "react";
 import { SafeAreaView, View, Text, TextInput, Button, FlatList, StyleSheet } from "react-native";
 import {
   CognitoUserPool, CognitoUser, AuthenticationDetails,
 } from "amazon-cognito-identity-js";
 import { API_URL, COGNITO } from "./config";
+
+// Lo que devuelve GET /v1/products (ProductsApiController de la tienda).
+type Producto = { id: number; name: string; description: string; price: number; stock: number; category: string };
 
 const pool = new CognitoUserPool({ UserPoolId: COGNITO.UserPoolId, ClientId: COGNITO.ClientId });
 
@@ -15,7 +20,7 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [productos, setProductos] = useState<any[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
 
   // Login con Cognito: devuelve el JWT que luego autoriza a la API.
   const login = () => {
@@ -23,17 +28,18 @@ export default function App() {
     const user = new CognitoUser({ Username: email, Pool: pool });
     const details = new AuthenticationDetails({ Username: email, Password: password });
     user.authenticateUser(details, {
-      onSuccess: (session) => setToken(session.getIdToken().getJwtToken()),
+      onSuccess: (session) => setToken(session.getAccessToken().getJwtToken()),
       onFailure: (err) => setError(err.message || "No se pudo iniciar sesion"),
     });
   };
 
-  // Catalogo desde la API gestionada, con el token en Authorization. La app maneja el corte sin cerrarse.
+  // Catalogo desde la API gestionada (API_URL ya termina en /v1), con el token en Authorization.
+  // La app maneja el corte sin cerrarse.
   useEffect(() => {
     if (!token) return;
-    fetch(`${API_URL}/v1/products`, { headers: { Authorization: token } })
+    fetch(`${API_URL}/products`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("API " + r.status))))
-      .then((data) => setProductos(Array.isArray(data) ? data : data.items ?? []))
+      .then((data) => setProductos(Array.isArray(data) ? data : []))
       .catch((e) => setError("Sin conexion con la API: " + e.message)); // caos suave: no se cae
   }, [token]);
 
@@ -55,11 +61,11 @@ export default function App() {
       {!!error && <Text style={s.err}>{error}</Text>}
       <FlatList
         data={productos}
-        keyExtractor={(it, i) => String(it.id ?? i)}
+        keyExtractor={(it) => String(it.id)}
         renderItem={({ item }) => (
           <View style={s.row}>
-            <Text>{item.name ?? item.Name ?? "Producto"}</Text>
-            <Text>S/ {item.price ?? item.Price ?? "-"}</Text>
+            <Text>{item.name}</Text>
+            <Text>S/ {item.price}</Text>
           </View>
         )}
       />

@@ -1,7 +1,24 @@
 # Fase 3 - Despliegue en EKS (Kubernetes) SOBRE Fargate.
 # EKS orquesta; Fargate es el compute (no hay nodos EC2 que gestionar). El Fargate profile que
-# selecciona este namespace se crea en infra/fase3-contenedores.yaml.
-# Reemplaza <ECR_IMAGE> por la imagen de tu ECR (p. ej. 123456789.dkr.ecr.us-east-1.amazonaws.com/urponline:TAG).
+# selecciona este namespace se crea en k8s/eksctl-cluster.yaml.
+# Reemplaza antes de aplicar (Outputs de las pilas URPOnlineLab y urponline-fase3):
+#   <ECR_IMAGE>      imagen de tu ECR, p. ej. 123456789012.dkr.ecr.us-east-2.amazonaws.com/urponline:v1
+#   <RDS_ENDPOINT>   Output RDSEndpoint        <REDIS_ENDPOINT>  Output RedisPrimary
+#   <DB_SECRET_ARN>  Output DbSecretArn        <PUBLIC_A>,<PUBLIC_B>  Outputs PublicSubnetA/B
+# Sin contrasenas aqui: la de RDS la lee la app de Secrets Manager con el rol IAM del ServiceAccount
+# 'urponline' (IRSA, creado por eksctl), igual que en las EC2.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: urponline-config
+  namespace: urponline
+data:
+  ConnectionStrings__Postgres: "Host=<RDS_ENDPOINT>;Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true"
+  ConnectionStrings__Redis: "<REDIS_ENDPOINT>:6379,ssl=true,abortConnect=false"
+  Database__SecretArn: "<DB_SECRET_ARN>"
+  AWS__Region: "us-east-2"
+  Metrics__CloudWatchEnabled: "true"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -17,6 +34,7 @@ spec:
     metadata:
       labels: { app: urponline }
     spec:
+      serviceAccountName: urponline        # rol IAM (IRSA): Secrets Manager + CloudWatch
       containers:
         - name: urponline
           image: <ECR_IMAGE>
@@ -25,11 +43,8 @@ spec:
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:8080"
-            # La cadena de conexion y los secretos vienen de ConfigMap/Secret (o Secrets Manager + CSI).
-            - name: ConnectionStrings__Postgres
-              valueFrom: { secretKeyRef: { name: urponline-secrets, key: postgres } }
-            - name: ConnectionStrings__Redis
-              valueFrom: { secretKeyRef: { name: urponline-secrets, key: redis } }
+          envFrom:
+            - configMapRef: { name: urponline-config }
           readinessProbe:
             httpGet: { path: /health, port: 8080 }
             initialDelaySeconds: 10
@@ -54,18 +69,20 @@ spec:
       targetPort: 8080
   type: ClusterIP
 ---
-# Ingress con el AWS Load Balancer Controller (crea un ALB). Requiere el controller instalado.
+# Ingress con el AWS Load Balancer Controller (crea un ALB publico en las subredes publicas de la VPC).
+# Requiere el controller instalado (ver README, paso "EKS sobre Fargate").
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: urponline
   namespace: urponline
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/subnets: <PUBLIC_A>,<PUBLIC_B>
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /health
 spec:
+  ingressClassName: alb
   rules:
     - http:
         paths:

@@ -25,4 +25,9 @@ jobs:
       - name: Validar plantillas CloudFormation (cfn-lint)
         run: |
           pip install --quiet cfn-lint
-          cfn-lint --non-zero-exit-code error infra/urponline-oneclick.yaml infra/github-oidc.yaml
+          cfn-lint --non-zero-exit-code error infra/urponline-oneclick.yaml infra/github-oidc.yaml infra/fase3-contenedores.yaml
+
+      - name: Pruebas del modelo de ML (sin AWS)
+        run: |
+          pip install --quiet -r ml/requirements.txt pytest
+          python -m pytest -q ml/test_ml.py

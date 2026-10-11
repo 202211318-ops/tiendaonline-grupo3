@@ -27,7 +27,7 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 |---|---|---|
 | **1. Contenedores y despliegue** | **Imagen Docker:** multietapa, publicada en ECR con escaneo, sin hallazgos críticos. **EKS sobre Fargate:** Deployment, Service e Ingress con autoescalado de pods. **Fargate vs. EC2:** el mismo contenedor en ambos; costo y rendimiento justificados. **Blue/green con reversión automática:** si al cambiar el tráfico suben los errores, vuelve solo a la versión anterior. | 5 o 0 |
 | **2. IA, API y app móvil** | **API de la tienda** con contrato OpenAPI. **Gestión de APIs** (claves, planes de uso, 429 al superar el límite, versión /v1). **App React Native + Cognito** con la integración propia del grupo, sin secretos en la app. **Patrones de agentes** (enrutador, planificar y ejecutar vs. ReAct, orquestador con subagentes, humano en el ciclo y memoria). **JSON en el prompt** (salida validada por esquema; experimento texto libre vs. JSON; entre agentes y hacia la app). **Caos suave en la app** (cortar la red o la API sin que se cierre). | 5 o 0 |
-| **3. Validación — predecir toda la arquitectura** | **Dataset propio:** bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan. **Modelo de Machine Learning (ML) en CPU y open source** (scikit-learn, XGBoost/LightGBM o ML.NET, sin costo): aprende de su telemetría a predecir cuándo la arquitectura se va a saturar o fallar. **Para qué sirve:** tener un modelo que prediga el comportamiento de la plataforma y ayude a decidir cuándo escalar y cómo mejorar o rediseñar; presentan precisión y recall. **Escalado proactivo:** la predicción dispara el autoescalado antes de saturar + contador en CloudWatch y alerta por SNS. **Interpretación** de los resultados. | 5 o 0 |
+| **3. Validación — predecir toda la arquitectura** | **Dataset propio:** bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan. **Modelo de Machine Learning (ML) en CPU y open source** (scikit-learn, XGBoost/LightGBM o ML.NET, sin costo): aprende de su telemetría a predecir cuándo la arquitectura se va a saturar o fallar. **Para qué sirve:** tener un modelo que prediga el comportamiento de la plataforma y ayude a decidir cuándo escalar y cómo mejorar o rediseñar; presentan precisión y recall, y por **episodio de saturación** la cobertura y la anticipación frente a un modelo trivial de persistencia. **Escalado proactivo:** la predicción sube los pods antes de saturar + contador en CloudWatch y alerta por SNS. **Interpretación** de los resultados. | 5 o 0 |
 | **4. Sustentación individual** | Banco de **50 preguntas**; se sortean algunas por integrante. Si un integrante no sustenta, la categoría vale 0 y ese alumno tiene 0 en el trabajo. | 5 o 0 |
 
 **Requisitos:** video con toda la implementación (participan todos, entregado el día anterior); la app llega instalada en un dispositivo o emulador. **Cada categoría es todo o nada. El alumno que no sustenta tiene 0.**
@@ -35,121 +35,274 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 
 ---
 
-# 🚀 DESPLEGAR Y PROBAR LA FASE 3
+# 🚀 DESPLEGAR Y PROBAR LA FASE 3, PASO A PASO
 
-> Todo con **CloudFormation / eksctl**. EKS cobra el clúster por hora: **créalo, pruébalo, bórralo y recréalo** para la presentación.
+> Todo con **CloudFormation y eksctl** (infraestructura como código). **EKS cobra el clúster por hora** aunque no tenga carga: créalo, pruébalo, **bórralo** (paso 10) y recréalo para la presentación.
+> Todo en la región **Ohio (`us-east-2`)**, la misma de la tienda.
 
-## 1. Imagen en contenedor (Docker → ECR)
+```
+ App React Native ──(JWT de Cognito)──► API Gateway /v1 ──► ALB del Ingress ──► pods en EKS/Fargate ──► RDS + Redis
+                                         429 si se pasa                         (subredes privadas de la VPC de la tienda)
+ CloudWatch ◄── métricas ── CronJob de predicción (ML) ──► sube el mínimo de pods del HPA ANTES de saturar + alerta SNS
+```
+
+## Paso 0. Lo que necesitas antes de empezar
+
+1. **La tienda desplegada** con la pila `URPOnlineLab` (fases 1-2): la fase 3 usa su VPC, su RDS, su Redis y su secreto de Secrets Manager.
+2. **Herramientas** en tu PC (una sola vez):
+
+| Herramienta | Para qué | Instalar (Windows) | Comprobar |
+|---|---|---|---|
+| AWS CLI v2 | todo lo de AWS | `winget install Amazon.AWSCLI` | `aws --version` |
+| Docker Desktop | construir las imágenes | https://www.docker.com/products/docker-desktop | `docker version` |
+| kubectl | manejar Kubernetes | `winget install Kubernetes.kubectl` | `kubectl version --client` |
+| eksctl | crear el clúster EKS | `winget install eksctl.eksctl` | `eksctl version` |
+| Helm | instalar el controlador del ALB | `winget install Helm.Helm` | `helm version` |
+| Python 3.11+ | el modelo de ML | `winget install Python.Python.3.12` | `python --version` |
+| k6 | generar carga | `winget install k6` | `k6 version` |
+| Node.js 20 LTS | la app móvil (Expo) | `winget install OpenJS.NodeJS.LTS` | `node --version` |
+
+3. **Las variables de la tienda.** Los comandos de esta guía son de **Bash** (Git Bash, WSL o CloudShell). Copia los Outputs de `URPOnlineLab` en variables:
 
 ```bash
-# Despliega ECR + Cognito + API Gateway
+export AWS_REGION=us-east-2
+out() { aws cloudformation describe-stacks --stack-name "$1" --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text; }
+VPC=$(out URPOnlineLab VpcId);              PUB_A=$(out URPOnlineLab PublicSubnetA); PUB_B=$(out URPOnlineLab PublicSubnetB)
+APP_A=$(out URPOnlineLab AppSubnetA);       APP_B=$(out URPOnlineLab AppSubnetB)
+RDS=$(out URPOnlineLab RDSEndpoint);        REDIS=$(out URPOnlineLab RedisPrimary)
+SECRET=$(out URPOnlineLab DbSecretArn);     DB_SG=$(out URPOnlineLab DbSecurityGroup); REDIS_SG=$(out URPOnlineLab RedisSecurityGroup)
+echo "$VPC $APP_A $APP_B $RDS $REDIS"       # si sale vacío, actualiza la pila URPOnlineLab con el YAML de esta rama
+```
+
+## Paso 1. Pila de la fase 3: ECR, Cognito, API Gateway, alertas y bucket del modelo
+
+```bash
 aws cloudformation deploy --stack-name urponline-fase3 \
   --template-file infra/fase3-contenedores.yaml --capabilities CAPABILITY_IAM \
-  --parameter-overrides AppNameUrl=http://EL-ALB-DEL-INGRESS
+  --parameter-overrides AppNameUrl=http://pendiente.invalid CorreoAlertas=tu-correo@ejemplo.com
+ECR=$(out urponline-fase3 EcrRepoUri);  ECR_ML=$(out urponline-fase3 EcrMlRepoUri)
+MODELOS=$(out urponline-fase3 ModelosBucket);  SNS=$(out urponline-fase3 AlertasTopicArn)
+```
 
-# Construye y sube la imagen al ECR (Output EcrRepoUri)
-ECR=$(aws cloudformation describe-stacks --stack-name urponline-fase3 --query "Stacks[0].Outputs[?OutputKey=='EcrRepoUri'].OutputValue" --output text)
+- `AppNameUrl` todavía no existe (es el ALB que creará EKS en el paso 4): por ahora va un valor provisional y en el **paso 5** se actualiza.
+- Te llega un correo de AWS: **confirma la suscripción** para recibir las alertas de saturación.
+
+| Crea | Para qué |
+|---|---|
+| ECR `urponline` y `urponline-ml` (con escaneo) | las imágenes de la tienda y del predictor |
+| Cognito (User Pool + cliente sin secreto) | el inicio de sesión de la app |
+| API Gateway HTTP con autorizador JWT, ruta `/v1/{proxy+}` y límite 50 req/s (ráfaga 100) | la API gestionada: sin token → 401, si se pasa → 429 |
+| SNS `urponline-alertas` + alarma `urponline-saturacion-predicha` | la alerta cuando el ML predice saturación |
+| S3 `urponline-modelos-…` (cifrado, privado) | donde vive `modelo.joblib` |
+
+## Paso 2. Imagen de la tienda (Docker → ECR)
+
+```bash
+bash scripts/descargar-modelo.sh                 # modelo de búsqueda semántica (Windows: scripts/descargar-modelo.ps1)
 aws ecr get-login-password | docker login --username AWS --password-stdin ${ECR%/*}
 docker build -t $ECR:v1 .
 docker push $ECR:v1
+aws ecr describe-image-scan-findings --repository-name urponline --image-id imageTag=v1 \
+  --query "imageScanFindings.findingSeverityCounts"          # la rúbrica pide 0 CRITICAL
 ```
 
-## 2. EKS sobre Fargate
+El `Dockerfile` es **multietapa** (compila con el SDK, ejecuta solo con el runtime), corre como **usuario no root** y trae un `HEALTHCHECK` sobre `/health`. Pruébalo en tu PC antes de subirlo: `docker run -p 8080:8080 ...` (ver "Descargar y correr la tienda en tu equipo").
+
+## Paso 3. Clúster EKS sobre Fargate, dentro de la VPC de la tienda
+
+1. **Completa `k8s/eksctl-cluster.yaml`** con tus valores (`<VPC_ID>`, `<PUBLIC_A>`, `<PUBLIC_B>`, `<APP_A>`, `<APP_B>`, `<DB_SECRET_ARN>`):
+   ```bash
+   sed -i "s|<VPC_ID>|$VPC|; s|<PUBLIC_A>|$PUB_A|; s|<PUBLIC_B>|$PUB_B|; s|<APP_A>|$APP_A|; s|<APP_B>|$APP_B|; s|<DB_SECRET_ARN>|$SECRET|" k8s/eksctl-cluster.yaml
+   ```
+2. **Crea el clúster** (15-20 min). Crea también los roles IAM de los pods (IRSA): la tienda lee la contraseña de RDS de **Secrets Manager**, igual que las EC2; nunca hay Access Keys en un pod.
+   ```bash
+   aws eks describe-cluster-versions --query "clusterVersions[?status=='STANDARD_SUPPORT'].clusterVersion"   # la versión del YAML debe estar aquí
+   eksctl create cluster -f k8s/eksctl-cluster.yaml
+   kubectl get nodes                                  # aparecen nodos "fargate-..."
+   ```
+3. **Deja entrar a los pods a RDS y Redis.** Los pods de Fargate usan el *security group del clúster*:
+   ```bash
+   EKS_SG=$(aws eks describe-cluster --name urponline --query cluster.resourcesVpcConfig.clusterSecurityGroupId --output text)
+   aws ec2 authorize-security-group-ingress --group-id $DB_SG    --protocol tcp --port 5432 --source-group $EKS_SG
+   aws ec2 authorize-security-group-ingress --group-id $REDIS_SG --protocol tcp --port 6379 --source-group $EKS_SG
+   ```
+4. **Instala metrics-server** (sin él, el autoescalado de pods no ve la CPU):
+   ```bash
+   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.7.2/components.yaml
+   ```
+5. **Instala el AWS Load Balancer Controller** (convierte el Ingress en un ALB):
+   ```bash
+   helm repo add eks https://aws.github.io/eks-charts && helm repo update
+   helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system \
+     --set clusterName=urponline --set serviceAccount.create=false \
+     --set serviceAccount.name=aws-load-balancer-controller --set region=$AWS_REGION --set vpcId=$VPC
+   kubectl -n kube-system rollout status deployment aws-load-balancer-controller
+   ```
+
+## Paso 4. Desplegar la tienda en EKS
 
 ```bash
-eksctl create cluster -f k8s/eksctl-cluster.yaml      # EKS orquesta, Fargate es el compute
-kubectl create namespace urponline
-# Reemplaza <ECR_IMAGE> por $ECR:v1 en k8s/deployment.yaml y aplica
-kubectl apply -f k8s/deployment.yaml
-kubectl get ingress -n urponline                       # te da el ALB de la tienda
-# Al terminar: eksctl delete cluster -f k8s/eksctl-cluster.yaml
+sed -i "s|<ECR_IMAGE>|$ECR:v1|; s|<RDS_ENDPOINT>|$RDS|; s|<REDIS_ENDPOINT>|$REDIS|; s|<DB_SECRET_ARN>|$SECRET|; s|<PUBLIC_A>|$PUB_A|; s|<PUBLIC_B>|$PUB_B|" k8s/deployment.yaml
+kubectl apply -f k8s/deployment.yaml               # ConfigMap + Deployment + Service + Ingress + HPA
+kubectl -n urponline get pods -w                   # espera 2 pods Running (Ctrl+C)
+ING=$(kubectl -n urponline get ingress urponline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+curl http://$ING/health                            # {"status":"ok"}  (el ALB tarda 2-3 min)
+curl http://$ING/api/v1/products                   # el catálogo en JSON
+kubectl -n urponline get hpa                       # TARGETS debe mostrar un % de CPU, no <unknown>
 ```
 
-**Fargate frente a EC2:** despliega el mismo contenedor con compute Fargate y con un node group EC2, y compara costo y rendimiento. **Blue/green:** levanta una segunda versión (otro Deployment) y cambia el peso del Ingress; si suben los 5xx, vuelve al anterior.
+**Autoescalado de pods:** con carga (paso 7) mira `kubectl -n urponline get hpa -w`: al pasar el 60 % de CPU suben las réplicas (hasta 10).
 
-## 3. App móvil (React Native + Cognito)
+## Paso 5. Conectar API Gateway con la tienda
 
 ```bash
-cd mobile && npm install
-# Edita config.ts con los Outputs: ApiUrl, UserPoolId, UserPoolClientId
-npm start      # Expo: escanea el QR o usa un emulador
+aws cloudformation deploy --stack-name urponline-fase3 \
+  --template-file infra/fase3-contenedores.yaml --capabilities CAPABILITY_IAM \
+  --parameter-overrides AppNameUrl=http://$ING
+API=$(out urponline-fase3 ApiUrl)
+curl -i $API/products                              # 401: sin token de Cognito no entra
 ```
 
-La app inicia sesión con **Cognito** y consume la API `/v1` con el **JWT**. No lleva secretos; si la API falla, lo maneja sin cerrarse (caos suave).
+- `/v1/{proxy}` de API Gateway llega a `/api/v1/{proxy}` de la tienda (`Controllers/ProductsApiController.cs`): `GET /v1/products` y `GET /v1/products/{id}`.
+- **Versionado:** agrega en el YAML una ruta `ANY /v2/{proxy+}` hacia `/api/v2/{proxy}` y el controlador `v2`, sin romper la app que usa `/v1`.
+- **Límite (429):** el stage tiene `ThrottlingRateLimit: 50` y `ThrottlingBurstLimit: 100`. Bájalos (p. ej. 2 y 5), vuelve a desplegar y lanza muchas solicitudes con token: verás `429 Too Many Requests`.
+- **Claves de API y planes de uso:** el tipo de API de esta plantilla (HTTP API) **no tiene** claves ni planes de uso; esos solo existen en **REST API** (`AWS::ApiGateway::RestApi` + `UsagePlan` + `ApiKey` + `UsagePlanKey`). Para cumplir ese punto de la rúbrica, el grupo crea una REST API en el YAML con esos recursos.
 
-## 4. Modelo de ML: predecir y escalar proactivamente
+## Paso 6. App móvil (React Native + Expo + Cognito)
+
+1. **Crea un usuario de prueba** en Cognito:
+   ```bash
+   POOL=$(out urponline-fase3 UserPoolId)
+   aws cognito-idp admin-create-user --user-pool-id $POOL --username alumno@ejemplo.com \
+     --user-attributes Name=email,Value=alumno@ejemplo.com Name=email_verified,Value=true --message-action SUPPRESS
+   aws cognito-idp admin-set-user-password --user-pool-id $POOL --username alumno@ejemplo.com --password 'Clave2026Segura' --permanent
+   ```
+2. **Configura y arranca la app:**
+   ```bash
+   cd mobile
+   npm install
+   # Edita config.ts: API_URL = Output ApiUrl (ya termina en /v1); UserPoolId y ClientId = Outputs UserPoolId y UserPoolClientId
+   npx expo start                                  # escanea el QR con Expo Go o abre un emulador (tecla a / i)
+   ```
+3. Inicia sesión con el usuario del punto 1: la app pide `GET /v1/products` con el **access token** como `Authorization: Bearer ...` y muestra el catálogo.
+4. **Caos suave:** apaga el wifi del teléfono o escala la tienda a 0 (`kubectl -n urponline scale deploy urponline --replicas=0`): la app muestra *"Sin conexión con la API"* y **no se cierra**. Vuelve a escalar a 2.
+
+La app **no lleva secretos**: el cliente de Cognito es público (sin secreto) y el token vive solo en memoria.
+
+## Paso 7. Modelo de ML: predecir la saturación y escalar ANTES
+
+Detalle de cómo funciona: sección **"Cómo implementar el modelo de ML"** más abajo.
 
 ```bash
 pip install -r ml/requirements.txt
-# a) Genera carga para tener telemetría (sube y baja)
-k6 run -e BASE_URL=https://TU-TIENDA pruebas/carga_stack.js
-# b) Arma el dataset con tu telemetría y etiquétalo
-python ml/collect_metrics.py --horas 6 --p95-umbral-ms 2000 --salida ml/dataset.csv
-# c) Entrena (precisión y recall, no solo acierto)
-python ml/train.py --dataset ml/dataset.csv
-# d) Predice cada minuto → escala ANTES de saturar (contador CloudWatch + alerta SNS)
-python ml/predict.py --modelo modelo.joblib --sns-topic arn:aws:sns:...:urponline-alertas
+ALB_DIM=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='$ING'].LoadBalancerArn" --output text | sed 's|.*:loadbalancer/||')
+
+# a) Primera corrida de carga (17 min, sube y baja) y su dataset
+k6 run -e BASE_URL=http://$ING pruebas/carga_stack.js
+python ml/collect_metrics.py --alb $ALB_DIM --horas 0.5 --p95-umbral-ms 2000 --salida ml/dataset.csv
+
+# b) Entrenar: predice saturación en los próximos 5 min; reporta precisión, recall y la comparación con la persistencia
+python ml/train.py --dataset ml/dataset.csv --horizonte 5
+
+# c) Pruebas del ML (sin AWS)
+python -m pytest -q ml/test_ml.py
+
+# d) Subir el modelo y la imagen del predictor
+aws s3 cp modelo.joblib s3://$MODELOS/modelo.joblib
+aws ecr get-login-password | docker login --username AWS --password-stdin ${ECR_ML%/*}
+docker build -t $ECR_ML:v1 ml/ && docker push $ECR_ML:v1
+
+# e) CronJob que predice cada minuto y sube el mínimo de pods del HPA antes de saturar
+sed -i "s|<ECR_ML_IMAGE>|$ECR_ML:v1|; s|<ALB>|$ALB_DIM|; s|<BUCKET>|$MODELOS|; s|<SNS_TOPIC>|$SNS|" k8s/prediccion.yaml
+kubectl apply -f k8s/prediccion.yaml
+
+# f) Segunda corrida de carga: mira el escalado proactivo en vivo
+k6 run -e BASE_URL=http://$ING pruebas/carga_stack.js &
+kubectl -n urponline logs -f job/$(kubectl -n urponline get jobs -o jsonpath='{.items[-1:].metadata.name}')
+kubectl -n urponline get hpa -w                    # MINPODS sube de 2 a 4+ ANTES de que el p95 pase de 2 s
 ```
 
-Una **alarma** sobre `SaturacionPredicha` dispara el autoescalado **antes** de que sature. Herramientas open source en CPU, sin GPU: **scikit-learn** (la del repo), XGBoost/LightGBM o ML.NET.
+**Qué deben ver:** en CloudWatch (namespace `URPOnline`) las métricas `SaturacionPredicha` y `SaturacionProbabilidad`; la alarma `urponline-saturacion-predicha` en rojo y el correo de SNS **antes** de la saturación; y el `MINPODS` del HPA subiendo. **Compárenlo** con el escalado solo por CPU (reactivo): ¿cuántos minutos antes reaccionó cada uno?
+
+## Paso 8. Fargate frente a EC2, y blue/green
+
+**Fargate frente a EC2:** agrega a `k8s/eksctl-cluster.yaml` un `managedNodeGroups` (p. ej. 2 × `t3.medium` en `app-a`/`app-b`) con `eksctl create nodegroup -f k8s/eksctl-cluster.yaml`, despliega el **mismo** contenedor en otro namespace que no esté en el perfil de Fargate y comparen con la **misma** carga de k6: p95, pods por minuto de arranque y costo por hora (Fargate cobra vCPU/memoria por segundo; EC2 cobra la instancia aunque esté ociosa).
+
+**Blue/green con reversión automática:** esto lo construye el grupo. Lo mínimo: dos Deployments (`urponline-blue` y `urponline-green`, cada uno con su Service) y en el Ingress una acción con pesos (`alb.ingress.kubernetes.io/actions.<nombre>` con `forwardConfig.targetGroups` y `weight`). Para la **reversión automática** usen una herramienta que mire los errores y devuelva el tráfico sola, por ejemplo **Argo Rollouts** (estrategia `blueGreen` con un `AnalysisTemplate` sobre los 5xx de CloudWatch). Demuestren en vivo: suben una versión que devuelve errores y el tráfico vuelve solo a la anterior.
+
+## Paso 9. Qué presentar
+
+1. La imagen en ECR con el escaneo **sin CRITICAL** y el `Dockerfile` multietapa.
+2. La tienda en **EKS/Fargate**: `kubectl get pods,hpa,ingress` y el autoescalado de pods bajo carga.
+3. Fargate vs. EC2 con números, y blue/green volviendo solo a la versión anterior.
+4. La API: 401 sin token, 200 con token, 429 al pasarse, `/v1` y `/v2`, claves y planes de uso (REST API).
+5. La app en un teléfono o emulador: login con Cognito, catálogo, y caos suave sin cerrarse.
+6. El ML: precisión, recall, **cobertura por episodio frente a la persistencia**, anticipación en minutos, y el HPA subiendo **antes** de saturar con la alerta de SNS.
+
+## Paso 10. Borrar todo (¡EKS cobra por hora!)
+
+```bash
+kubectl delete -f k8s/prediccion.yaml -f k8s/deployment.yaml      # primero: así el controlador borra el ALB
+aws ec2 revoke-security-group-ingress --group-id $DB_SG    --protocol tcp --port 5432 --source-group $EKS_SG
+aws ec2 revoke-security-group-ingress --group-id $REDIS_SG --protocol tcp --port 6379 --source-group $EKS_SG
+eksctl delete cluster -f k8s/eksctl-cluster.yaml                  # 10-15 min
+aws s3 rm s3://$MODELOS --recursive
+aws ecr delete-repository --repository-name urponline --force
+aws ecr delete-repository --repository-name urponline-ml --force
+aws cloudformation delete-stack --stack-name urponline-fase3
+```
+
+Si quitas los permisos del paso 3.3 **antes** de borrar el clúster, el security group del clúster se puede borrar sin errores. La pila `URPOnlineLab` (la tienda) se borra aparte, como en las fases anteriores.
 
 ## 📁 Dónde está cada cosa en el código
 
 | Parte | Archivo |
 |---|---|
-| Imagen del contenedor | `Dockerfile` |
-| EKS sobre Fargate | `k8s/eksctl-cluster.yaml` · `k8s/deployment.yaml` (Deployment/Service/Ingress/HPA) |
-| ECR, Cognito, API Gateway (JWT, /v1, 429) | `infra/fase3-contenedores.yaml` |
+| Imagen del contenedor | `Dockerfile` · `.dockerignore` |
+| API JSON del catálogo para la app | `Controllers/ProductsApiController.cs` |
+| EKS sobre Fargate (VPC de la tienda, IRSA) | `k8s/eksctl-cluster.yaml` |
+| Tienda en Kubernetes (ConfigMap, Deployment, Service, Ingress, HPA) | `k8s/deployment.yaml` |
+| ECR, Cognito, API Gateway (JWT, /v1, 429), SNS, alarma, bucket del modelo | `infra/fase3-contenedores.yaml` |
 | App móvil (React Native + Cognito) | `mobile/` (`App.tsx`, `config.ts`) |
 | Dataset de telemetría | `ml/collect_metrics.py` |
 | Entrenar el modelo (CPU) | `ml/train.py` |
-| Predecir + escalado proactivo | `ml/predict.py` |
+| Predecir + escalado proactivo | `ml/predict.py` · `ml/Dockerfile` · `k8s/prediccion.yaml` |
+| Pruebas del ML | `ml/test_ml.py` |
 | Carga para el dataset (k6) | `pruebas/carga_stack.js` |
 
 ---
 
 # 🔧 QUÉ CONFIGURAR EN EL YAML Y QUÉ CÓDIGO CAMBIAR
 
-El código se entrega **hecho**: ustedes lo **despliegan, lo amplían y lo modifican**.
+El código se entrega **hecho y probado**: ustedes lo **despliegan, lo amplían y lo modifican**.
 
-## Configurar `infra/fase3-contenedores.yaml`
-
-| Parámetro | Qué pones |
-|---|---|
-| `AppNameUrl` | la URL del ALB del Ingress de EKS (la API de la tienda) |
-| `CallbackUrl` | el deep link de la app (`urponline://auth`) |
-
-**Lo que el grupo AGREGA/CAMBIA en el YAML:**
-- En **API Gateway**: el límite de solicitudes (`ThrottlingRateLimit`/`BurstLimit`) para provocar el **429**, y una ruta `/v2` para demostrar el versionado.
-- En **Cognito**: la política de contraseñas y los scopes.
-- En **EKS** (`k8s/eksctl-cluster.yaml`): la región y la versión; y para **Fargate vs. EC2**, agregar un `nodeGroups` EC2 y comparar.
-- En `k8s/deployment.yaml`: el `HorizontalPodAutoscaler` (umbral de CPU) y los `resources`.
-
-## Qué código cambiar, por paso de la rúbrica
-
-| Paso | Archivo(s) | Qué haces |
+| Paso de la rúbrica | Archivo(s) | Qué hacen ustedes |
 |---|---|---|
-| Imagen Docker | `Dockerfile` | optimizas etapas y reduces el tamaño; el escaneo de ECR sin críticos |
-| EKS sobre Fargate | `k8s/eksctl-cluster.yaml` · `k8s/deployment.yaml` | despliegas y demuestras el autoescalado de pods |
-| Fargate vs. EC2 | `k8s/eksctl-cluster.yaml` | agregas un node group EC2 y comparas costo/rendimiento |
-| Blue/green | `k8s/deployment.yaml` | segunda versión + cambio de peso en el Ingress + reversión por errores |
-| Gestión de APIs | `infra/fase3-contenedores.yaml` | claves/planes/límite (429) y `/v1` |
-| App móvil + Cognito | `mobile/` (`App.tsx`, `config.ts`) | construyes el flujo de login/tokens y las pantallas |
+| Imagen Docker | `Dockerfile` | reducir el tamaño de la imagen; dejar el escaneo de ECR sin CRITICAL |
+| EKS sobre Fargate | `k8s/eksctl-cluster.yaml` · `k8s/deployment.yaml` | desplegar; ajustar `resources` y el umbral del `HorizontalPodAutoscaler`; demostrar el autoescalado |
+| Fargate vs. EC2 | `k8s/eksctl-cluster.yaml` | agregar un `managedNodeGroups` y comparar costo y rendimiento |
+| Blue/green | `k8s/` | dos versiones + pesos en el Ingress + reversión automática (paso 8) |
+| Gestión de APIs | `infra/fase3-contenedores.yaml` | límite (429), ruta `/v2`, contrato OpenAPI y una REST API con claves y planes de uso |
+| App móvil + Cognito | `mobile/` | refresco del token, pantallas (detalle, carrito), política de contraseñas y scopes en Cognito |
 | Patrones de agentes / JSON | servicios de los agentes (de la fase 2) | enrutador, planificar y ejecutar, orquestador, memoria; salida JSON validada |
-| Dataset de telemetría | `ml/collect_metrics.py` | eliges qué métricas y el umbral de etiqueta |
-| Modelo de ML | `ml/train.py` | eliges el algoritmo y ajustas; reportas precisión y recall |
-| Escalado proactivo | `ml/predict.py` + alarma en el YAML | conectas la predicción al autoescalado |
+| Dataset de telemetría | `ml/collect_metrics.py` | qué métricas incluir y qué umbral de saturación tiene sentido |
+| Modelo de ML | `ml/train.py` | algoritmo, horizonte y señales; reportar precisión, recall y la comparación con la persistencia |
+| Escalado proactivo | `ml/predict.py` · `k8s/prediccion.yaml` | cuántos pods agregar (`--pods-extra`) y comparar contra el escalado por CPU |
 
 # 🤖 CÓMO IMPLEMENTAR EL MODELO DE ML (LO HACEN USTEDES)
 
-El repo trae una **implementación base funcional** (scikit-learn, CPU). Ustedes la **entienden, la adaptan y la interpretan**. Pasos:
+El repo trae una **implementación base funcional y con pruebas** (scikit-learn, CPU). Ustedes la **entienden, la adaptan y la interpretan**:
 
-1. **Generen telemetría real.** Corran `pruebas/carga_stack.js` (k6) que **sube y baja** la carga, para tener minutos *saturados* y *no saturados*. Sin las dos clases, el modelo no aprende.
-2. **Armen y etiqueten el dataset.** `ml/collect_metrics.py` baja de CloudWatch las métricas de **todo el stack** (ALB p95, 5xx, RDS, SQS, Lambda) por minuto y marca `saturado=1` si el p95 superó el umbral. **Decidan ustedes** qué métricas incluir y qué umbral tiene sentido para su tienda.
-3. **Entrenen** con `ml/train.py`. Usa un RandomForest **balanceado** (la saturación es rara). La etiqueta a predecir es la saturación del **minuto siguiente** (por eso *predice*, no describe). Pueden cambiar el algoritmo por XGBoost/LightGBM o ML.NET.
-4. **Evalúen bien.** Miren **precisión y recall** sobre «saturado», no el acierto: con pocos eventos raros, un modelo que siempre dice «ok» acierta 95% y no sirve. Miren también qué **señales** anticipan la saturación (importancia de variables).
-5. **Conecten la predicción al escalado.** `ml/predict.py` publica `SaturacionPredicha` en CloudWatch y alerta por SNS; una **alarma** sobre esa métrica dispara el autoescalado **antes** de saturar. Compárenlo con el escalado por CPU (reactivo).
-6. **Interpreten.** ¿Qué señal avisa primero? ¿Con cuánta anticipación? ¿Cuál es el costo de una alarma falsa frente a una caída sin aviso? ¿Qué cambiarían en la arquitectura con lo que el modelo reveló?
+1. **Generen telemetría real.** `pruebas/carga_stack.js` (k6) **sube y baja** la carga para tener minutos *saturados* y *no saturados*. Sin las dos clases, el modelo no aprende.
+2. **Armen y etiqueten el dataset.** `ml/collect_metrics.py` baja de CloudWatch, por minuto, las métricas de **cada recurso** (ALB p95, 5xx y solicitudes; RDS conexiones y CPU; SQS; Lambda) y marca `saturado=1` si el p95 del ALB superó el umbral. CloudWatch guarda estas métricas **por recurso**: por eso se le pasa `--alb` (o `--stack`, y él busca el ALB, el RDS, la cola y la Lambda de la pila).
+3. **Entrenen** con `ml/train.py`. La etiqueta es: **¿habrá saturación en los próximos `--horizonte` minutos?** (por defecto 5: lo que tarda en arrancar un pod nuevo). Además del valor de cada métrica usa su **tendencia** (cuánto cambió respecto del minuto anterior): la carga subiendo es lo que avisa antes. Es una **serie de tiempo**: se entrena con el pasado (primer 70 %) y se prueba con el futuro (último 30 %); mezclar al azar pondría minutos vecinos en los dos lados e inflaría los resultados. RandomForest **balanceado** (la saturación es rara); pueden cambiarlo por XGBoost/LightGBM o ML.NET.
+4. **Evalúen bien.**
+   - **Precisión y recall** sobre «saturado», no el acierto: con eventos raros, un modelo que siempre dice «ok» acierta 95 % y no sirve.
+   - **Por episodio de saturación**: ¿avisó **antes de que empezara** cada saturación (cobertura) y con cuántos minutos (anticipación)? Dentro de una saturación que ya empezó, decir «sigue saturado» es trivial.
+   - **Contra la persistencia** («seguirá igual que ahora»): `train.py` imprime las dos. Si el ML no anticipa más episodios que la persistencia, no aporta.
+   - **Señales**: qué métricas pesan más (importancia de variables).
+5. **Conecten la predicción al escalado.** `ml/predict.py` corre cada minuto como CronJob en EKS (`k8s/prediccion.yaml`): publica `SaturacionPredicha` en CloudWatch, alerta por SNS y **sube el mínimo de pods del HPA** antes de saturar; cuando la predicción vuelve a «ok», lo devuelve a 2. Compárenlo con el escalado por CPU (reactivo).
+6. **Interpreten.** ¿Qué señal avisa primero? ¿Con cuánta anticipación? ¿Cuál es el costo de una alarma falsa (pods de más) frente a una caída sin aviso? ¿Qué cambiarían en la arquitectura con lo que el modelo reveló?
 
 > **Para qué sirve:** tener un modelo que prediga el comportamiento de la plataforma y les ayude a decidir **cuándo escalar** y **cómo mejorar o rediseñar** la arquitectura. Todo en **CPU, sin GPU y sin costo**.
 
@@ -227,27 +380,31 @@ Comprueba la instalación (después de **cerrar y volver a abrir VS Code**): `aw
 
 > Si `aws` dice *"no se reconoce como comando"*: cierra **todas** las ventanas de VS Code y vuelve a abrirlo (recién instalado no se ve). Mientras tanto puedes usar la ruta completa: `& "C:\Program Files\Amazon\AWSCLIV2\aws.exe" configure`
 
-**2. Crea tu Access Key** en la consola de AWS:
-1. Arriba a la derecha haz clic en **tu nombre** → **Security credentials**.
-2. Sección **Access keys** → **Create access key** (si avisa que no se recomienda en la cuenta root, marca la casilla y continúa: es para el laboratorio).
-3. Copia los dos valores — el secreto **solo se muestra una vez**, descarga el `.csv`:
-   - **Access key ID** → 20 caracteres, **empieza con `AKIA`**
-   - **Secret access key** → 40 caracteres
+**2. Inicia sesión SIN usar la cuenta root.** Nunca crees Access Keys de la cuenta **root**: quien las obtiene controla toda la cuenta y no se pueden limitar. Elige una forma:
 
-> ⚠️ El número de 12 dígitos de la página *Account* (ej. `5013-8083-3144`) es el **ID de cuenta**, **no** es la clave. Tampoco lo son los códigos de MFA.
+- **Recomendada — IAM Identity Center (SSO), sin claves guardadas:** en la consola, **IAM Identity Center → Enable** → crea tu usuario y asígnale la cuenta con el permiso **AdministratorAccess** (solo para el laboratorio). Luego en la terminal:
+  ```powershell
+  aws configure sso          # SSO start URL: el "AWS access portal URL" de Identity Center; region: us-east-2
+  $env:AWS_PROFILE = "el-nombre-de-perfil-que-elegiste"
+  ```
+  Las credenciales son **temporales** y se renuevan con `aws sso login`.
+- **Alternativa — usuario IAM (no root) con Access Key:** **IAM → Users → Create user** (`laboratorio-urp`) → *Attach policies directly* → **AdministratorAccess** (solo laboratorio) → **Create user** → abre el usuario → **Security credentials → Create access key** → *Command Line Interface (CLI)*. Copia los dos valores (el secreto **solo se muestra una vez**):
+  - **Access key ID** → 20 caracteres, **empieza con `AKIA`**
+  - **Secret access key** → 40 caracteres
 
-**3. Configura la CLI** en la terminal:
-
-```powershell
-aws configure
-```
+  Y configúralos:
+  ```powershell
+  aws configure
+  ```
 
 | Te pregunta | Escribe |
 |---|---|
-| `AWS Access Key ID` | la clave que empieza con `AKIA` |
+| `AWS Access Key ID` | la clave que empieza con `AKIA` (del usuario IAM, **nunca** de root) |
 | `AWS Secret Access Key` | el secreto |
 | `Default region name` | el **código** de la región, no el nombre: Ohio = **`us-east-2`**, N. Virginia = **`us-east-1`** |
 | `Default output format` | **`json`** (es el formato en que se muestran los resultados) |
+
+> ⚠️ El número de 12 dígitos de la página *Account* (ej. `5013-8083-3144`) es el **ID de cuenta**, **no** es la clave. Tampoco lo son los códigos de MFA. Al terminar el curso, **desactiva y borra** la Access Key del usuario IAM.
 
 **4. Verifica:**
 
@@ -261,7 +418,8 @@ Debe mostrar tu `Account` (12 dígitos) y tu `Arn`. 🔒 **Nunca pegues la Acces
 |---|---|---|
 | `Could not connect to the endpoint URL: https://sts.OHIO.amazonaws.com` | Pusiste el nombre de la región | `aws configure set region us-east-2` |
 | `InvalidClientTokenId` / `The security token included in the request is invalid` | La Access Key está mal copiada o no es una Access Key | Crea una nueva (paso 2) y vuelve a `aws configure` |
-| `Unable to locate credentials` | No ejecutaste `aws configure` | Paso 3 |
+| `The SSO session associated with this profile has expired` | La sesión SSO venció | `aws sso login` |
+| `Unable to locate credentials` | No ejecutaste `aws configure` / `aws configure sso` | Paso 2 |
 | `SignatureDoesNotMatch` | El secreto está mal copiado | Vuelve a `aws configure` y pega el secreto completo |
 
 ---
