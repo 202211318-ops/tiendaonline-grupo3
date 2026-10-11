@@ -1,5 +1,7 @@
 # URPOnline — Laboratorio AWS (TiendaOnline .NET)
 
+> **Fase 3:** 21 de noviembre
+
 ---
 
 # 🍴 PRIMERO: HAZ TU FORK. TRABAJA SOLO EN TU PROPIO REPOSITORIO
