@@ -17,20 +17,20 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 
 ---
 
-# 📋 RÚBRICA DE EVALUACIÓN (20 PUNTOS)
+# 📋 FASE 3 — IA, APPS MÓVILES Y CONTENEDORES · RÚBRICA (20 PUNTOS)
 
-## ➡️ [Descargar la rúbrica: `RUTA_DEL_CURSO/07_EVALUACION/URPOnline_Rubrica_Evaluacion_20_Puntos.docx`](RUTA_DEL_CURSO/07_EVALUACION/URPOnline_Rubrica_Evaluacion_20_Puntos.docx)
+### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: 21 de noviembre de 2026** · participan **todos** los integrantes
 
-### 👥 Grupos de **7 a 10** integrantes · 🎤 **100 minutos** de presentación repartidos por igual entre los grupos · ⏰ Entrega del video: viernes 23 de octubre de 2026 · participan **todos** los integrantes
+**4 categorías de 5 puntos, todo o nada** (notas 0, 5, 10, 15, 20). Sin GPU. Todo con **CloudFormation**. App móvil: **React Native**. Autenticación: **Amazon Cognito + integración propia del grupo**.
 
-| Bloque | Qué se evalúa | Puntos |
+| Categoría | Qué se evalúa (pasos y criterio de cumplimiento) | Puntos |
 |---|---|---|
-| 1 | Despliegue, AWS SDK y fallas | 5 o 0 |
-| 2 | PostgreSQL: carga y búsqueda por vectores | 5 o 0 |
-| 3 | Carrito y pago | 5 o 0 |
-| 4 | Sustentación individual (banco de 50 preguntas) | 5 o 0 |
+| **1. Contenedores y despliegue** | **Imagen Docker:** multietapa, publicada en ECR con escaneo, sin hallazgos críticos. **EKS sobre Fargate:** Deployment, Service e Ingress con autoescalado de pods. **Fargate vs. EC2:** el mismo contenedor en ambos; costo y rendimiento justificados. **Blue/green con reversión automática:** si al cambiar el tráfico suben los errores, vuelve solo a la versión anterior. | 5 o 0 |
+| **2. IA, API y app móvil** | **API de la tienda** con contrato OpenAPI. **Gestión de APIs** (claves, planes de uso, 429 al superar el límite, versión /v1). **App React Native + Cognito** con la integración propia del grupo, sin secretos en la app. **Patrones de agentes** (enrutador, planificar y ejecutar vs. ReAct, orquestador con subagentes, humano en el ciclo y memoria). **JSON en el prompt** (salida validada por esquema; experimento texto libre vs. JSON; entre agentes y hacia la app). **Caos suave en la app** (cortar la red o la API sin que se cierre). | 5 o 0 |
+| **3. Validación — predecir toda la arquitectura** | **Dataset propio:** bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan. **Modelo de Machine Learning (ML) en CPU y open source** (scikit-learn, XGBoost/LightGBM o ML.NET, sin costo): aprende de su telemetría a predecir cuándo la arquitectura se va a saturar o fallar. **Para qué sirve:** tener un modelo que prediga el comportamiento de la plataforma y ayude a decidir cuándo escalar y cómo mejorar o rediseñar; presentan precisión y recall. **Escalado proactivo:** la predicción dispara el autoescalado antes de saturar + contador en CloudWatch y alerta por SNS. **Interpretación** de los resultados. | 5 o 0 |
+| **4. Sustentación individual** | Banco de **50 preguntas**; se sortean algunas por integrante. Si un integrante no sustenta, la categoría vale 0 y ese alumno tiene 0 en el trabajo. | 5 o 0 |
 
-**Cada bloque es todo o nada.** **El alumno que no sustenta tiene nota 0**, aunque haya participado en el trabajo. La rúbrica explica qué hacer, cómo demostrarlo y dónde cambiar el código, e incluye guías y scripts.
+**Requisitos:** video con toda la implementación (participan todos, entregado el día anterior); la app llega instalada en un dispositivo o emulador. **Cada categoría es todo o nada. El alumno que no sustenta tiene 0.**
 
 
 ---
