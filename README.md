@@ -35,6 +35,12 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 
 ---
 
+## 💬 [Canal del curso: GitHub Discussions](https://github.com/cortexgovernor/tiendaonline/discussions)
+
+El canal es **único para todo el curso** (el del repositorio principal): ahí se comparten dudas de la rúbrica y los desafíos, respuestas del banco de preguntas, código y soluciones a errores. No abran un Discussions aparte en su fork. **Nunca publiquen secretos** (contraseñas, claves de AWS, tokens).
+
+---
+
 ## 👉 Empieza aquí
 
 1. **Prepara tu equipo:** [CONFIGURACION_VSCODE.md](CONFIGURACION_VSCODE.md) — qué instalar y configurar (VS Code, .NET 8, AWS CLI, extensiones).
