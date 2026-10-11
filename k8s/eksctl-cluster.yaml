@@ -1,0 +1,26 @@
+# Fase 3 - Clúster EKS SOBRE Fargate, con eksctl.
+# EKS orquesta (Kubernetes); Fargate es el compute (sin nodos EC2 que gestionar).
+# Crea:   eksctl create cluster -f k8s/eksctl-cluster.yaml
+# Borra:  eksctl delete cluster -f k8s/eksctl-cluster.yaml   (EKS cobra el clúster por hora: bórralo al terminar)
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: urponline
+  region: us-east-1
+  version: "1.30"
+
+# Todo el namespace urponline corre en Fargate (compute serverless).
+fargateProfiles:
+  - name: urponline-fp
+    selectors:
+      - namespace: urponline
+      - namespace: kube-system
+
+# OIDC para que los pods usen roles IAM (p. ej. el AWS Load Balancer Controller y los secretos).
+iam:
+  withOIDC: true
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["api", "audit", "authenticator"]

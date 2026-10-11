@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Fase 3 - ECR (imagen), Amazon Cognito (autenticacion de la app movil) y API Gateway (HTTP API con
+  autorizador JWT de Cognito) para la tienda en contenedores. El clúster EKS sobre Fargate se crea
+  con eksctl (k8s/eksctl-cluster.yaml); los manifiestos van en k8s/deployment.yaml.
+
+Parameters:
+  AppNameUrl:
+    Type: String
+    Description: URL base de la API de la tienda (el ALB del Ingress de EKS), para la integracion.
+  CallbackUrl:
+    Type: String
+    Default: urponline://auth
+    Description: Deep link de la app React Native para el retorno de login.
+
+Resources:
+
+  # ---------- ECR: repositorio de la imagen, con escaneo de vulnerabilidades ----------
+  EcrRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: urponline
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          { "rules": [ { "rulePriority": 1, "description": "Conserva 10 imagenes",
+            "selection": { "tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 10 },
+            "action": { "type": "expire" } } ] }
+
+  # ---------- Cognito: autenticacion de la app movil ----------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: urponline-usuarios
+      AutoVerifiedAttributes: [email]
+      UsernameAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireNumbers: true
+          RequireLowercase: true
+          RequireUppercase: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: urponline-movil
+      GenerateSecret: false          # app publica (React Native): no lleva secreto
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs: [!Ref CallbackUrl]
+      SupportedIdentityProviders: [COGNITO]
+      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+
+  # ---------- API Gateway: gestion de la API con autorizador JWT de Cognito ----------
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: urponline-api
+      ProtocolType: HTTP
+      # Versionado: la app usa /v1 (cambiar la API sin romper apps instaladas).
+
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      AuthorizerType: JWT
+      Name: cognito-jwt
+      IdentitySource: ['$request.header.Authorization']
+      JwtConfiguration:
+        Audience: [!Ref UserPoolClient]
+        Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      IntegrationUri: !Sub '${AppNameUrl}/{proxy}'
+      PayloadFormatVersion: '1.0'
+
+  ApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'ANY /v1/{proxy+}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub 'integrations/${ApiIntegration}'
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+      # Plan de uso / limite de solicitudes (throttling): 429 al superarlo.
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+
+Outputs:
+  EcrRepoUri:
+    Description: URI del repositorio ECR (etiqueta y sube tu imagen aqui).
+    Value: !GetAtt EcrRepo.RepositoryUri
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  ApiUrl:
+    Description: URL de la API gestionada (la app consume /v1/...).
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/v1'
