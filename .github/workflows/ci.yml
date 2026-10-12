@@ -30,4 +30,4 @@ jobs:
       - name: Pruebas del modelo de ML (sin AWS)
         run: |
           pip install --quiet -r ml/requirements.txt pytest
-          python -m pytest -q ml/test_ml.py
+          python -m pytest -q ml/test_ml.py infra/test_respuesta_intrusion.py

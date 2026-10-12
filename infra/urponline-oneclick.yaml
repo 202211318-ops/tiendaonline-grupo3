@@ -43,7 +43,20 @@ Parameters:
     Type: String
     Default: 'true'
     AllowedValues: ['true','false']
+  AgentesBusName:
+    Type: String
+    Default: ''
+    Description: Bus de EventBridge de la capa de agentes (Output BusName de infra/fase2-agentes.yaml). Vacio = la tienda no publica eventos.
+  LlmSecretName:
+    Type: String
+    Default: urponline/llm
+    Description: Secreto de Secrets Manager con las API keys de los modelos (lo crea y lo edita /admin/modelos).
+  SecurityEmail:
+    Type: String
+    Default: ''
+    Description: Correo que recibe las alertas de seguridad (intrusion, CPU alta). Vacio = sin suscripcion.
 Conditions:
+  HayCorreoSeguridad: !Not [!Equals [!Ref SecurityEmail, '']]
   MultiAZ: !Equals [!Ref EnableMultiAZ,'true']
 Resources:
   VPC:
@@ -155,6 +168,9 @@ Resources:
       GroupDescription: URPOnline apps from ALB only
       VpcId: !Ref VPC
       SecurityGroupIngress: [{IpProtocol: tcp,FromPort: 80,ToPort: 80,SourceSecurityGroupId: !Ref AlbSG}]
+      # Salida MINIMA: solo HTTPS (AWS, modelos, paquetes). RDS y Redis en AppEgressPostgres/AppEgressRedis.
+      # Una conexion a otro puerto (p. ej. un minero a :3333) queda BLOQUEADA y registrada en los Flow Logs.
+      SecurityGroupEgress: [{IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS}]
   DbSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -189,6 +205,26 @@ Resources:
       StorageEncrypted: true
   # AWS Secrets Manager: guarda usuario y contraseña de RDS. La app lo lee al arrancar con el AWS SDK
   # (GetSecretValue); la contraseña ya no se escribe en /etc/urponline.env de la EC2.
+  # Claves de acceso a /admin (modelos, promociones, compras) y a /Analytics. Las GENERA Secrets Manager:
+  # no se escriben en el YAML ni en el repositorio. La EC2 las lee al arrancar (ver UserData).
+  AccesosSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${AWS::StackName}/accesos'
+      Description: Claves de /admin y /Analytics de URPOnline (generadas)
+      GenerateSecretString:
+        SecretStringTemplate: '{"usuario":"urponline"}'
+        GenerateStringKey: admin
+        PasswordLength: 24
+        ExcludePunctuation: true
+  DashboardSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${AWS::StackName}/dashboard'
+      Description: Clave de /Analytics de URPOnline (generada)
+      GenerateSecretString:
+        PasswordLength: 24
+        ExcludePunctuation: true
   DbSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -232,7 +268,15 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:s3:::${ArtifactBucket}/${ArtifactKey}'
               - Effect: Allow
                 Action: ['secretsmanager:GetSecretValue']
-                Resource: !Ref DbSecret
+                Resource: [!Ref DbSecret, !Ref AccesosSecret, !Ref DashboardSecret]
+              # /admin/modelos guarda y lee las API keys de los modelos en su propio secreto.
+              - Effect: Allow
+                Action: ['secretsmanager:GetSecretValue','secretsmanager:PutSecretValue','secretsmanager:CreateSecret']
+                Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LlmSecretName}*'
+              # La tienda publica sus eventos de negocio (CompraCancelada, PedidoCreado...) en el bus de los agentes.
+              - Effect: Allow
+                Action: ['events:PutEvents']
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/urponline-*'
   # VPC Flow Logs: registra el tráfico aceptado y rechazado de toda la VPC en CloudWatch Logs.
   FlowLogGroup:
     Type: AWS::Logs::LogGroup
@@ -317,6 +361,8 @@ Resources:
         ImageId: !Ref LatestAmiId
         InstanceType: !Ref InstanceType
         IamInstanceProfile: {Arn: !GetAtt InstanceProfile.Arn}
+        # IMDSv2 obligatorio: el rol de la instancia solo se obtiene con token de sesion (frena el robo por SSRF).
+        MetadataOptions: {HttpTokens: required, HttpPutResponseHopLimit: 1, HttpEndpoint: enabled}
         SecurityGroupIds: [!Ref AppSG]
         UserData:
           Fn::Base64: !Sub |
@@ -343,7 +389,14 @@ Resources:
             # La app publica sus métricas de negocio (pedidos, ventas) en CloudWatch con el AWS SDK.
             Metrics__CloudWatchEnabled=true
             AWS__Region=${AWS::Region}
+            # Fase 2: bus de EventBridge de los agentes (vacio = solo se escriben en el log) y secreto de los modelos.
+            Events__BusName=${AgentesBusName}
+            Llm__SecretId=${LlmSecretName}
             ENV
+            # Claves de /admin y /Analytics: se leen de Secrets Manager (no estan en el YAML ni en el ZIP).
+            echo "Admin__AccessKey=$(aws secretsmanager get-secret-value --region ${AWS::Region} --secret-id ${AccesosSecret} --query SecretString --output text | python3 -c 'import sys,json; print(json.load(sys.stdin)["admin"])')" >> /etc/urponline.env
+            echo "Dashboard__AccessKey=$(aws secretsmanager get-secret-value --region ${AWS::Region} --secret-id ${DashboardSecret} --query SecretString --output text)" >> /etc/urponline.env
+            grep -q '^Admin__AccessKey=.\+' /etc/urponline.env
             chmod 600 /etc/urponline.env
             mkdir -p /var/log/urponline && chown nginx:nginx /var/log/urponline
             cat >/etc/systemd/system/urponline.service <<'SYSTEMD'
@@ -481,6 +534,196 @@ Resources:
             {"type":"log","x":0,"y":29,"width":24,"height":6,"properties":{"title":"Nginx: peticiones por EC2 (el ALB reparte)","region":"${AWS::Region}","view":"bar","query":"SOURCE '${NginxLogGroup}' | stats count(*) as peticiones by @logStream as EC2"}}
           ]
         }
+  # ===================== DEFENSA PROACTIVA (fase 2, categoria 3) =====================
+  # Grupo de CUARENTENA: sin entrada y sin salida. La respuesta automatica mueve aqui la instancia comprometida.
+  CuarentenaSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: URPOnline cuarentena - instancia aislada por la respuesta automatica (sin trafico)
+      VpcId: !Ref VPC
+      SecurityGroupEgress: [{IpProtocol: '-1', CidrIp: 127.0.0.1/32}]   # reemplaza la salida por defecto: nada sale
+  # Salida MINIMA de la aplicacion (ademas del HTTPS de AppSG): solo a RDS y a Redis.
+  AppEgressPostgres:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: {GroupId: !Ref AppSG, IpProtocol: tcp, FromPort: 5432, ToPort: 5432, DestinationSecurityGroupId: !Ref DbSG}
+  AppEgressRedis:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: {GroupId: !Ref AppSG, IpProtocol: tcp, FromPort: 6379, ToPort: 6379, DestinationSecurityGroupId: !Ref RedisSG}
+
+  SeguridadTopic:
+    Type: AWS::SNS::Topic
+    Properties: {TopicName: !Sub '${AWS::StackName}-seguridad'}
+  SeguridadSuscripcion:
+    Type: AWS::SNS::Subscription
+    Condition: HayCorreoSeguridad
+    Properties: {TopicArn: !Ref SeguridadTopic, Protocol: email, Endpoint: !Ref SecurityEmail}
+
+  # DETECCION: los VPC Flow Logs registran cada intento de salida (aceptado o rechazado). Se cuenta como
+  # conexion sospechosa la que va a puertos tipicos de mineria / tuneles o a la red reservada 203.0.113.0/24.
+  FiltroPuertosSospechosos:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref FlowLogGroup
+      FilterPattern: '[version, account, eni, source, destination, srcport, destport=3333 || destport=4444 || destport=5555 || destport=14444 || destport=51820, protocol, packets, bytes, start, end, action, status]'
+      MetricTransformations: [{MetricNamespace: URPOnline/Seguridad, MetricName: ConexionSospechosa, MetricValue: '1', DefaultValue: 0}]
+  FiltroRedSospechosa:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref FlowLogGroup
+      FilterPattern: '[version, account, eni, source, destination="203.0.113.*", srcport, destport, protocol, packets, bytes, start, end, action, status]'
+      MetricTransformations: [{MetricNamespace: URPOnline/Seguridad, MetricName: ConexionSospechosa, MetricValue: '1', DefaultValue: 0}]
+  ConexionSospechosaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-conexion-sospechosa'
+      AlarmDescription: Intento de salida a un destino sospechoso (VPC Flow Logs). Dispara la respuesta automatica.
+      Namespace: URPOnline/Seguridad
+      MetricName: ConexionSospechosa
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SeguridadTopic]
+  # Senal del minero: CPU sostenida alta. Solo AVISA (una tormenta de compras tambien sube la CPU).
+  CpuAltaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-cpu-alta'
+      AlarmDescription: CPU promedio de las EC2 sobre 85 % durante 3 minutos (posible minero o carga extrema).
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions: [{Name: AutoScalingGroupName, Value: !Ref Scaling}]
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SeguridadTopic]
+
+  # RESPUESTA AUTOMATICA: alarma -> EventBridge -> Lambda que aisla y reemplaza la instancia (fuente legible:
+  # infra/respuesta_intrusion.py, con sus pruebas en infra/test_respuesta_intrusion.py).
+  RespuestaIntrusionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: {Version: '2012-10-17', Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: 'sts:AssumeRole'}]}
+      ManagedPolicyArns: ['arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole']
+      Policies:
+        - PolicyName: respuesta-intrusion
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - {Effect: Allow, Action: ['logs:StartQuery'], Resource: !GetAtt FlowLogGroup.Arn}
+              - {Effect: Allow, Action: ['logs:GetQueryResults', 'ec2:DescribeNetworkInterfaces', 'ec2:CreateSnapshots', 'ec2:CreateTags', 'ec2:ModifyInstanceAttribute', 'autoscaling:SetInstanceHealth'], Resource: '*'}
+              - {Effect: Allow, Action: ['sns:Publish'], Resource: !Ref SeguridadTopic}
+  RespuestaIntrusionLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-respuesta-intrusion'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt RespuestaIntrusionRole.Arn
+      Timeout: 120
+      Environment:
+        Variables: {FLOW_LOGS: !Ref FlowLogGroup, CUARENTENA_SG: !Ref CuarentenaSG, TOPIC: !Ref SeguridadTopic}
+      Code:
+        ZipFile: |
+          # Respuesta AUTOMATICA a una intrusion (fase 2, defensa proactiva). Va embebida en infra/urponline-oneclick.yaml
+          # (recurso RespuestaIntrusionLambda); este archivo es la fuente legible y la que prueba infra/test_respuesta_intrusion.py.
+          # La dispara la alarma de conexion sospechosa (VPC Flow Logs). Sin intervencion humana:
+          #  1) busca en los Flow Logs que interfaz de red intento la conexion y a que instancia pertenece;
+          #  2) guarda un snapshot FORENSE de sus discos; 3) la AISLA (security group de cuarentena, sin trafico);
+          #  4) la marca no sana para que Auto Scaling la REEMPLACE por una limpia; 5) avisa por SNS.
+          import os, time, boto3
+          logs = boto3.client('logs'); ec2 = boto3.client('ec2'); asg = boto3.client('autoscaling'); sns = boto3.client('sns')
+          CONSULTA = ("fields interfaceId | filter dstPort in [3333,4444,5555,14444,51820] "
+                      "or isIpv4InSubnet(dstAddr, '203.0.113.0/24') | stats count() by interfaceId")
+
+
+          def instancias_sospechosas(minutos=15):
+              fin = int(time.time())
+              q = logs.start_query(logGroupName=os.environ['FLOW_LOGS'], startTime=fin - minutos * 60, endTime=fin,
+                                   queryString=CONSULTA)['queryId']
+              r = {}
+              for _ in range(30):
+                  r = logs.get_query_results(queryId=q)
+                  if r['status'] in ('Complete', 'Failed', 'Cancelled', 'Timeout'):
+                      break
+                  time.sleep(2)
+              enis = [c['value'] for fila in r.get('results', []) for c in fila if c['field'] == 'interfaceId']
+              if not enis:
+                  return []
+              nis = ec2.describe_network_interfaces(NetworkInterfaceIds=enis)['NetworkInterfaces']
+              return sorted({n['Attachment']['InstanceId'] for n in nis if n.get('Attachment', {}).get('InstanceId')})
+
+
+          def handler(event, context):
+              hechas = []
+              for i in instancias_sospechosas():
+                  ec2.create_snapshots(InstanceSpecification={'InstanceId': i}, Description='Forense URPOnline ' + i,
+                                       TagSpecifications=[{'ResourceType': 'snapshot', 'Tags': [{'Key': 'urponline', 'Value': 'forense'}]}])
+                  ec2.modify_instance_attribute(InstanceId=i, Groups=[os.environ['CUARENTENA_SG']])
+                  try:
+                      asg.set_instance_health(InstanceId=i, HealthStatus='Unhealthy', ShouldRespectGracePeriod=False)
+                  except asg.exceptions.ClientError:
+                      pass  # la instancia no es del Auto Scaling: queda aislada igual
+                  hechas.append(i)
+              sns.publish(TopicArn=os.environ['TOPIC'], Subject='URPOnline: respuesta automatica a intrusion',
+                          Message='Conexion sospechosa en VPC Flow Logs. Instancias con snapshot forense, en cuarentena y '
+                                  'reemplazadas por Auto Scaling: ' + (', '.join(hechas) or 'ninguna encontrada en los Flow Logs'))
+              return {'aisladas': hechas}
+  RespuestaIntrusionRegla:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Cuando la alarma de conexion sospechosa pasa a ALARM, ejecuta la respuesta automatica.
+      EventPattern:
+        source: [aws.cloudwatch]
+        detail-type: [CloudWatch Alarm State Change]
+        detail:
+          alarmName: [!Ref ConexionSospechosaAlarm]
+          state: {value: [ALARM]}
+      Targets: [{Id: respuesta-intrusion, Arn: !GetAtt RespuestaIntrusionLambda.Arn}]
+  RespuestaIntrusionPermiso:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RespuestaIntrusionLambda
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt RespuestaIntrusionRegla.Arn
+
+  # AUDITORIA: CloudTrail registra quien hizo que en la cuenta (todas las regiones), con validacion de integridad.
+  TrailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption: {ServerSideEncryptionConfiguration: [{ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}}]}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      LifecycleConfiguration: {Rules: [{Id: borrar-a-los-30-dias, Status: Enabled, ExpirationInDays: 30}]}
+  TrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TrailBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - {Sid: CloudTrailAcl, Effect: Allow, Principal: {Service: cloudtrail.amazonaws.com}, Action: 's3:GetBucketAcl', Resource: !GetAtt TrailBucket.Arn}
+          - Sid: CloudTrailWrite
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: 's3:PutObject'
+            Resource: !Sub '${TrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+            Condition: {StringEquals: {'s3:x-amz-acl': bucket-owner-full-control}}
+  Trail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: TrailBucketPolicy
+    Properties:
+      TrailName: !Sub '${AWS::StackName}-auditoria'
+      S3BucketName: !Ref TrailBucket
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
 Outputs:
   ALBDNS: {Value: !GetAtt ALB.DNSName}
   DashboardURL: {Description: Telemetría de todos los servicios en una pantalla (CloudWatch), Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/URPOnline-${AWS::StackName}'}
@@ -501,6 +744,12 @@ Outputs:
   DbSecurityGroup: {Description: Security group de RDS (se le agrega el acceso desde EKS), Value: !Ref DbSG}
   RedisSecurityGroup: {Description: Security group de Redis (se le agrega el acceso desde EKS), Value: !Ref RedisSG}
   DbSecretArn: {Description: Secreto de RDS en Secrets Manager, Value: !Ref DbSecret}
+  AccesosSecretArn: {Description: 'Clave de /admin (aws secretsmanager get-secret-value --secret-id ... --query SecretString)', Value: !Ref AccesosSecret}
+  DashboardSecretArn: {Description: Clave de /Analytics, Value: !Ref DashboardSecret}
   S3EndpointId: {Description: VPC endpoint de S3 (Gateway), Value: !Ref S3Endpoint}
   DataNaclId: {Description: NACL de la subred de datos, Value: !Ref DataNacl}
   TargetGroupArn: {Value: !Ref TG}
+  SeguridadTopicArn: {Description: Alertas de seguridad (intrusion y CPU alta), Value: !Ref SeguridadTopic}
+  CuarentenaSecurityGroup: {Description: Security group de cuarentena (sin trafico), Value: !Ref CuarentenaSG}
+  RespuestaIntrusionFunction: {Description: Lambda de respuesta automatica a intrusion, Value: !Ref RespuestaIntrusionLambda}
+  TrailName: {Description: CloudTrail de auditoria, Value: !Ref Trail}

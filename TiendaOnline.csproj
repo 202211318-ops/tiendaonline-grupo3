@@ -5,6 +5,8 @@
   <ItemGroup><None Include="ml-models/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="8.0.11" />
+    <!-- DataProtection trae System.Security.Cryptography.Xml 8.0.2, con vulnerabilidades altas (CVE-2026-33116 y las de julio de 2026): se fija la version parcheada. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.4" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
