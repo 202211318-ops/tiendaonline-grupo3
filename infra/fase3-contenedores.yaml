@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Fase 3 - ECR (imagen), Amazon Cognito (autenticacion de la app movil) y API Gateway (HTTP API con
-  autorizador JWT de Cognito) para la tienda en contenedores. El clúster EKS sobre Fargate se crea
+  Fase 3 - ECR (imagenes), Amazon Cognito (autenticacion de la app movil), API Gateway (REST API con
+  autorizador de Cognito, claves de API y plan de uso), alertas de saturacion (SNS + alarma) y el bucket
+  del modelo de ML. El clúster EKS sobre Fargate se crea
   con eksctl (k8s/eksctl-cluster.yaml); los manifiestos van en k8s/deployment.yaml.
 
 Parameters:
@@ -80,56 +81,106 @@ Resources:
       AllowedOAuthFlowsUserPoolClient: true
       CallbackURLs: [!Ref CallbackUrl]
       SupportedIdentityProviders: [COGNITO]
-      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      # La app usa SRP (la contrasena nunca viaja). USER_PASSWORD_AUTH solo para sacar un token desde la
+      # terminal y probar la API con curl en el laboratorio (README, paso 5).
+      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH, ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
 
-  # ---------- API Gateway: gestion de la API con autorizador JWT de Cognito ----------
-  HttpApi:
-    Type: AWS::ApiGatewayV2::Api
+  # ---------- API Gateway (REST API): gestion de la API ----------
+  # REST API y no HTTP API porque la gestion de APIs pide claves de API y planes de uso (solo REST los tiene).
+  # Cada solicitud necesita: el ID token de Cognito (Authorization) y la clave de API (x-api-key).
+  # /v1/{proxy} se reenvia a /api/v1/{proxy} de la tienda (Controllers/ProductsApiController.cs).
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
     Properties:
       Name: urponline-api
-      ProtocolType: HTTP
-      # Versionado: la app usa /v1 (cambiar la API sin romper apps instaladas).
+      Description: API de la tienda URPOnline para la app movil (version /v1)
+      EndpointConfiguration: { Types: [REGIONAL] }
+      ApiKeySourceType: HEADER
 
-  JwtAuthorizer:
-    Type: AWS::ApiGatewayV2::Authorizer
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
     Properties:
-      ApiId: !Ref HttpApi
-      AuthorizerType: JWT
-      Name: cognito-jwt
-      IdentitySource: ['$request.header.Authorization']
-      JwtConfiguration:
-        Audience: [!Ref UserPoolClient]
-        Issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+      RestApiId: !Ref RestApi
+      Name: cognito
+      Type: COGNITO_USER_POOLS
+      ProviderARNs: [!GetAtt UserPool.Arn]
+      IdentitySource: method.request.header.Authorization
 
-  ApiIntegration:
-    Type: AWS::ApiGatewayV2::Integration
+  V1Resource:
+    Type: AWS::ApiGateway::Resource
     Properties:
-      ApiId: !Ref HttpApi
-      IntegrationType: HTTP_PROXY
-      IntegrationMethod: ANY
-      # /v1/{proxy} de la API publica -> /api/v1/{proxy} de la tienda (Controllers/ProductsApiController.cs).
-      IntegrationUri: !Sub '${AppNameUrl}/api/v1/{proxy}'
-      PayloadFormatVersion: '1.0'
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: v1
 
-  ApiRoute:
-    Type: AWS::ApiGatewayV2::Route
+  V1ProxyResource:
+    Type: AWS::ApiGateway::Resource
     Properties:
-      ApiId: !Ref HttpApi
-      RouteKey: 'ANY /v1/{proxy+}'
-      AuthorizationType: JWT
-      AuthorizerId: !Ref JwtAuthorizer
-      Target: !Sub 'integrations/${ApiIntegration}'
+      RestApiId: !Ref RestApi
+      ParentId: !Ref V1Resource
+      PathPart: '{proxy+}'
+
+  V1ProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref V1ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId: !Ref CognitoAuthorizer
+      ApiKeyRequired: true
+      RequestParameters: { method.request.path.proxy: true }
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        Uri: !Sub '${AppNameUrl}/api/v1/{proxy}'
+        RequestParameters: { integration.request.path.proxy: method.request.path.proxy }
+
+  # Si agregas o cambias metodos (p. ej. /v2), cambia el nombre logico de este recurso (ApiDeploymentV2...)
+  # para que CloudFormation publique una version nueva de la API.
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: V1ProxyMethod
+    Properties:
+      RestApiId: !Ref RestApi
 
   ApiStage:
-    Type: AWS::ApiGatewayV2::Stage
+    Type: AWS::ApiGateway::Stage
     Properties:
-      ApiId: !Ref HttpApi
-      StageName: '$default'
-      AutoDeploy: true
-      # Plan de uso / limite de solicitudes (throttling): 429 al superarlo.
-      DefaultRouteSettings:
-        ThrottlingBurstLimit: 100
-        ThrottlingRateLimit: 50
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: prod
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          MetricsEnabled: true
+          ThrottlingRateLimit: 50       # limite global de la etapa
+          ThrottlingBurstLimit: 100
+
+  # Plan de uso: limite por clave (429 al superarlo) y cuota mensual (429 al agotarla).
+  PlanBasico:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: urponline-basico
+      Description: Plan de la app movil
+      ApiStages: [{ ApiId: !Ref RestApi, Stage: !Ref ApiStage }]
+      Throttle: { RateLimit: 10, BurstLimit: 20 }
+      Quota: { Limit: 100000, Period: MONTH }
+
+  ClaveAppMovil:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: ApiStage
+    Properties:
+      Name: urponline-app-movil
+      Description: Identifica a la app movil frente al plan de uso (no es un secreto de autenticacion)
+      Enabled: true
+
+  ClaveEnPlan:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ClaveAppMovil
+      KeyType: API_KEY
+      UsagePlanId: !Ref PlanBasico
 
   # ---------- Escalado proactivo: alerta cuando el modelo de ML predice saturacion ----------
   # ml/predict.py publica URPOnline/SaturacionPredicha (1 = va a saturar) cada minuto.
@@ -150,7 +201,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: urponline-saturacion-predicha
-      AlarmDescription: El modelo de ML predice saturacion el proximo minuto (escalado proactivo).
+      AlarmDescription: El modelo de ML predice saturacion en los proximos minutos (escalado proactivo).
       Namespace: URPOnline
       MetricName: SaturacionPredicha
       Statistic: Maximum
@@ -180,5 +231,11 @@ Outputs:
     Description: Tema SNS de alertas (pasalo a ml/predict.py con --sns-topic).
     Value: !Ref AlertasTopic
   ApiUrl:
-    Description: URL de la API gestionada (la app consume /v1/...).
-    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/v1'
+    Description: URL de la API gestionada, ya con /v1 (la app consume ApiUrl/products).
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${ApiStage}/v1'
+  RestApiId:
+    Description: ID de la REST API (para exportar el contrato OpenAPI con get-export).
+    Value: !Ref RestApi
+  ApiKeyId:
+    Description: ID de la clave de la app; su valor se lee con aws apigateway get-api-key --include-value.
+    Value: !Ref ClaveAppMovil

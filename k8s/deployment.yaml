@@ -1,6 +1,10 @@
-# Fase 3 - Despliegue en EKS (Kubernetes) SOBRE Fargate.
+# Fase 3 - Despliegue en EKS (Kubernetes) SOBRE Fargate, con BLUE/GREEN y reversion automatica.
 # EKS orquesta; Fargate es el compute (no hay nodos EC2 que gestionar). El Fargate profile que
 # selecciona este namespace se crea en k8s/eksctl-cluster.yaml.
+# Blue/green: Argo Rollouts (instalado en el paso 3 del README) levanta cada version nueva detras del
+# Service 'urponline-preview', la ataca con k6 (k8s/bluegreen-analisis.yaml) y solo entonces le pasa el
+# trafico del Service 'urponline' (el del Ingress/ALB). Tras el cambio la vuelve a probar: si falla,
+# el trafico vuelve SOLO a la version anterior, que se mantiene encendida scaleDownDelaySeconds.
 # Reemplaza antes de aplicar (Outputs de las pilas URPOnlineLab y urponline-fase3):
 #   <ECR_IMAGE>      imagen de tu ECR, p. ej. 123456789012.dkr.ecr.us-east-2.amazonaws.com/urponline:v1
 #   <RDS_ENDPOINT>   Output RDSEndpoint        <REDIS_ENDPOINT>  Output RedisPrimary
@@ -20,14 +24,29 @@ data:
   AWS__Region: "us-east-2"
   Metrics__CloudWatchEnabled: "true"
 ---
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: urponline
   namespace: urponline
   labels: { app: urponline }
 spec:
   replicas: 2
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 300            # si la version nueva no esta lista en 5 min (p. ej. no arranca)...
+  progressDeadlineAbort: true             # ...se aborta sola y el trafico sigue en la anterior
+  strategy:
+    blueGreen:
+      activeService: urponline            # el que recibe el trafico del ALB
+      previewService: urponline-preview   # la version nueva, todavia sin trafico
+      autoPromotionEnabled: true          # se promueve sola si la prueba previa pasa
+      prePromotionAnalysis:               # ANTES del cambio: carga contra la version nueva
+        templates: [{ templateName: prueba-carga }]
+        args: [{ name: url, value: "http://urponline-preview.urponline.svc.cluster.local" }]
+      postPromotionAnalysis:              # DESPUES del cambio: carga contra la version activa
+        templates: [{ templateName: prueba-carga }]
+        args: [{ name: url, value: "http://urponline.urponline.svc.cluster.local" }]
+      scaleDownDelaySeconds: 300          # la version anterior sigue encendida 5 min para volver al instante
   selector:
     matchLabels: { app: urponline }
   template:
@@ -69,6 +88,19 @@ spec:
       targetPort: 8080
   type: ClusterIP
 ---
+# Service de PREVIEW: Argo Rollouts lo apunta a la version nueva mientras se prueba.
+apiVersion: v1
+kind: Service
+metadata:
+  name: urponline-preview
+  namespace: urponline
+spec:
+  selector: { app: urponline }
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
 # Ingress con el AWS Load Balancer Controller (crea un ALB publico en las subredes publicas de la VPC).
 # Requiere el controller instalado (ver README, paso "EKS sobre Fargate").
 apiVersion: networking.k8s.io/v1
@@ -93,7 +125,7 @@ spec:
                 name: urponline
                 port: { number: 80 }
 ---
-# Autoescalado de pods por CPU (HPA).
+# Autoescalado de pods por CPU (HPA) sobre el Rollout.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -101,8 +133,8 @@ metadata:
   namespace: urponline
 spec:
   scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
     name: urponline
   minReplicas: 2
   maxReplicas: 10

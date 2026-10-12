@@ -33,6 +33,7 @@ fargateProfiles:
     selectors:
       - namespace: urponline
       - namespace: kube-system
+      - namespace: argo-rollouts        # el controlador del blue/green (Argo Rollouts)
 
 # OIDC para que los pods usen roles IAM (IRSA): sin Access Keys en ningun pod.
 iam:

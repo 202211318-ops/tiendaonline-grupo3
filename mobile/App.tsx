@@ -1,5 +1,5 @@
 // Fase 3 - App movil (React Native + Expo) que consume la API de la tienda con autenticacion Cognito.
-// Login con Amazon Cognito (SRP) + el access token (JWT) se manda como "Bearer" a la API /v1.
+// Login con Amazon Cognito (SRP); a la API /v1 van el ID token (Authorization) y la clave de API (x-api-key).
 // El grupo construye encima su propia integracion (manejo de tokens, refresh, pantallas).
 // Polyfill de numeros aleatorios seguros: amazon-cognito-identity-js lo necesita en React Native/Expo (va primero).
 import "react-native-get-random-values";
@@ -8,7 +8,7 @@ import { SafeAreaView, View, Text, TextInput, Button, FlatList, StyleSheet } fro
 import {
   CognitoUserPool, CognitoUser, AuthenticationDetails,
 } from "amazon-cognito-identity-js";
-import { API_URL, COGNITO } from "./config";
+import { API_KEY, API_URL, COGNITO } from "./config";
 
 // Lo que devuelve GET /v1/products (ProductsApiController de la tienda).
 type Producto = { id: number; name: string; description: string; price: number; stock: number; category: string };
@@ -28,17 +28,17 @@ export default function App() {
     const user = new CognitoUser({ Username: email, Pool: pool });
     const details = new AuthenticationDetails({ Username: email, Password: password });
     user.authenticateUser(details, {
-      onSuccess: (session) => setToken(session.getAccessToken().getJwtToken()),
+      onSuccess: (session) => setToken(session.getIdToken().getJwtToken()), // el autorizador de Cognito valida el ID token
       onFailure: (err) => setError(err.message || "No se pudo iniciar sesion"),
     });
   };
 
-  // Catalogo desde la API gestionada (API_URL ya termina en /v1), con el token en Authorization.
+  // Catalogo desde la API gestionada (API_URL ya termina en /v1), con el token y la clave de API.
   // La app maneja el corte sin cerrarse.
   useEffect(() => {
     if (!token) return;
-    fetch(`${API_URL}/products`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("API " + r.status))))
+    fetch(`${API_URL}/products`, { headers: { Authorization: token, "x-api-key": API_KEY } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status === 429 ? "demasiadas solicitudes (429)" : "API " + r.status))))
       .then((data) => setProductos(Array.isArray(data) ? data : []))
       .catch((e) => setError("Sin conexion con la API: " + e.message)); // caos suave: no se cae
   }, [token]);

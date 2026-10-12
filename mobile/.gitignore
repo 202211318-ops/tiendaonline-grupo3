@@ -1,0 +1,6 @@
+# Dependencias y archivos generados de Expo: no se suben al repo
+node_modules/
+.expo/
+dist/
+web-build/
+*.log

@@ -41,8 +41,8 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 > Todo en la región **Ohio (`us-east-2`)**, la misma de la tienda.
 
 ```
- App React Native ──(JWT de Cognito)──► API Gateway /v1 ──► ALB del Ingress ──► pods en EKS/Fargate ──► RDS + Redis
-                                         429 si se pasa                         (subredes privadas de la VPC de la tienda)
+ App React Native ──(token de Cognito + clave de API)──► API Gateway /v1 ──► ALB del Ingress ──► pods en EKS/Fargate ──► RDS + Redis
+                                                        401/403 sin token o clave · 429 si se pasa del plan                         (subredes privadas de la VPC de la tienda)
  CloudWatch ◄── métricas ── CronJob de predicción (ML) ──► sube el mínimo de pods del HPA ANTES de saturar + alerta SNS
 ```
 
@@ -91,7 +91,7 @@ MODELOS=$(out urponline-fase3 ModelosBucket);  SNS=$(out urponline-fase3 Alertas
 |---|---|
 | ECR `urponline` y `urponline-ml` (con escaneo) | las imágenes de la tienda y del predictor |
 | Cognito (User Pool + cliente sin secreto) | el inicio de sesión de la app |
-| API Gateway HTTP con autorizador JWT, ruta `/v1/{proxy+}` y límite 50 req/s (ráfaga 100) | la API gestionada: sin token → 401, si se pasa → 429 |
+| API Gateway **REST API**: autorizador de Cognito, ruta `/v1/{proxy+}`, **clave de API** y **plan de uso** (10 req/s por clave, ráfaga 20, 100 000 al mes) | la API gestionada: sin token → 401, sin clave → 403, si se pasa → 429 |
 | SNS `urponline-alertas` + alarma `urponline-saturacion-predicha` | la alerta cuando el ML predice saturación |
 | S3 `urponline-modelos-…` (cifrado, privado) | donde vive `modelo.joblib` |
 
@@ -138,13 +138,23 @@ El `Dockerfile` es **multietapa** (compila con el SDK, ejecuta solo con el runti
      --set serviceAccount.name=aws-load-balancer-controller --set region=$AWS_REGION --set vpcId=$VPC
    kubectl -n kube-system rollout status deployment aws-load-balancer-controller
    ```
+6. **Instala Argo Rollouts** (el blue/green con reversión automática del paso 8) y su plugin de kubectl:
+   ```bash
+   kubectl create namespace argo-rollouts
+   kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/download/v1.7.2/install.yaml
+   kubectl -n argo-rollouts rollout status deployment argo-rollouts
+   # Plugin (Windows): descarga kubectl-argo-rollouts-windows-amd64 de
+   # https://github.com/argoproj/argo-rollouts/releases/tag/v1.7.2, renómbralo a kubectl-argo-rollouts.exe y ponlo en el PATH
+   kubectl argo rollouts version
+   ```
 
 ## Paso 4. Desplegar la tienda en EKS
 
 ```bash
 sed -i "s|<ECR_IMAGE>|$ECR:v1|; s|<RDS_ENDPOINT>|$RDS|; s|<REDIS_ENDPOINT>|$REDIS|; s|<DB_SECRET_ARN>|$SECRET|; s|<PUBLIC_A>|$PUB_A|; s|<PUBLIC_B>|$PUB_B|" k8s/deployment.yaml
-kubectl apply -f k8s/deployment.yaml               # ConfigMap + Deployment + Service + Ingress + HPA
-kubectl -n urponline get pods -w                   # espera 2 pods Running (Ctrl+C)
+kubectl apply -f k8s/bluegreen-analisis.yaml      # la prueba automática del blue/green (paso 8)
+kubectl apply -f k8s/deployment.yaml               # ConfigMap + Rollout + Services + Ingress + HPA
+kubectl argo rollouts get rollout urponline -n urponline --watch   # espera "Status: ✔ Healthy" (Ctrl+C)
 ING=$(kubectl -n urponline get ingress urponline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 curl http://$ING/health                            # {"status":"ok"}  (el ALB tarda 2-3 min)
 curl http://$ING/api/v1/products                   # el catálogo en JSON
@@ -159,35 +169,47 @@ kubectl -n urponline get hpa                       # TARGETS debe mostrar un % d
 aws cloudformation deploy --stack-name urponline-fase3 \
   --template-file infra/fase3-contenedores.yaml --capabilities CAPABILITY_IAM \
   --parameter-overrides AppNameUrl=http://$ING
-API=$(out urponline-fase3 ApiUrl)
-curl -i $API/products                              # 401: sin token de Cognito no entra
+API=$(out urponline-fase3 ApiUrl)                  # https://....execute-api.us-east-2.amazonaws.com/prod/v1
+CLAVE=$(aws apigateway get-api-key --api-key $(out urponline-fase3 ApiKeyId) --include-value --query value --output text)
+
+# Usuario de prueba y su token (ID token de Cognito)
+POOL=$(out urponline-fase3 UserPoolId); CLIENTE=$(out urponline-fase3 UserPoolClientId)
+aws cognito-idp admin-create-user --user-pool-id $POOL --username alumno@ejemplo.com \
+  --user-attributes Name=email,Value=alumno@ejemplo.com Name=email_verified,Value=true --message-action SUPPRESS
+aws cognito-idp admin-set-user-password --user-pool-id $POOL --username alumno@ejemplo.com --password 'Clave2026Segura' --permanent
+TOKEN=$(aws cognito-idp initiate-auth --client-id $CLIENTE --auth-flow USER_PASSWORD_AUTH \
+  --auth-parameters USERNAME=alumno@ejemplo.com,PASSWORD='Clave2026Segura' --query AuthenticationResult.IdToken --output text)
+
+curl -s -o /dev/null -w "%{http_code}\n" -H "x-api-key: $CLAVE" $API/products                       # 401: sin token
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: $TOKEN" $API/products                    # 403: sin clave de API
+curl -s -H "Authorization: $TOKEN" -H "x-api-key: $CLAVE" $API/products                               # 200: el catálogo
+for i in $(seq 1 60); do curl -s -o /dev/null -w "%{http_code} " -H "Authorization: $TOKEN" -H "x-api-key: $CLAVE" $API/products & done; wait; echo   # aparecen 429
 ```
 
 - `/v1/{proxy}` de API Gateway llega a `/api/v1/{proxy}` de la tienda (`Controllers/ProductsApiController.cs`): `GET /v1/products` y `GET /v1/products/{id}`.
-- **Versionado:** agrega en el YAML una ruta `ANY /v2/{proxy+}` hacia `/api/v2/{proxy}` y el controlador `v2`, sin romper la app que usa `/v1`.
-- **Límite (429):** el stage tiene `ThrottlingRateLimit: 50` y `ThrottlingBurstLimit: 100`. Bájalos (p. ej. 2 y 5), vuelve a desplegar y lanza muchas solicitudes con token: verás `429 Too Many Requests`.
-- **Claves de API y planes de uso:** el tipo de API de esta plantilla (HTTP API) **no tiene** claves ni planes de uso; esos solo existen en **REST API** (`AWS::ApiGateway::RestApi` + `UsagePlan` + `ApiKey` + `UsagePlanKey`). Para cumplir ese punto de la rúbrica, el grupo crea una REST API en el YAML con esos recursos.
+- **Clave de API y plan de uso:** la clave identifica a la app frente al **plan** `urponline-basico` (10 solicitudes/s por clave, ráfaga 20, 100 000 al mes); al pasarse, **429**. Una clave que **no** está en el plan recibe **403**: créala sin asociarla y pruébala. La clave no es un secreto de autenticación (al usuario lo autentica Cognito).
+- **Contrato OpenAPI:** expórtalo de la API desplegada:
+  ```bash
+  aws apigateway get-export --rest-api-id $(out urponline-fase3 RestApiId) --stage-name prod --export-type oas30 \
+    --parameters extensions=apigateway openapi.json
+  ```
+- **Versionado:** agrega en el YAML un recurso `v2` con su `{proxy+}` y su método hacia `/api/v2/{proxy}` (más el controlador `v2` en la tienda) **y cambia el nombre lógico de `ApiDeployment`** para que se publique; la app que usa `/v1` no se rompe.
 
 ## Paso 6. App móvil (React Native + Expo + Cognito)
 
-1. **Crea un usuario de prueba** en Cognito:
-   ```bash
-   POOL=$(out urponline-fase3 UserPoolId)
-   aws cognito-idp admin-create-user --user-pool-id $POOL --username alumno@ejemplo.com \
-     --user-attributes Name=email,Value=alumno@ejemplo.com Name=email_verified,Value=true --message-action SUPPRESS
-   aws cognito-idp admin-set-user-password --user-pool-id $POOL --username alumno@ejemplo.com --password 'Clave2026Segura' --permanent
-   ```
+1. **Usuario de prueba:** el que creaste en el paso 5 (`alumno@ejemplo.com`).
 2. **Configura y arranca la app:**
    ```bash
    cd mobile
    npm install
-   # Edita config.ts: API_URL = Output ApiUrl (ya termina en /v1); UserPoolId y ClientId = Outputs UserPoolId y UserPoolClientId
+   # Edita config.ts: API_URL = Output ApiUrl (ya termina en /v1); API_KEY = el valor de $CLAVE (paso 5);
+   # UserPoolId y ClientId = Outputs UserPoolId y UserPoolClientId
    npx expo start                                  # escanea el QR con Expo Go o abre un emulador (tecla a / i)
    ```
-3. Inicia sesión con el usuario del punto 1: la app pide `GET /v1/products` con el **access token** como `Authorization: Bearer ...` y muestra el catálogo.
-4. **Caos suave:** apaga el wifi del teléfono o escala la tienda a 0 (`kubectl -n urponline scale deploy urponline --replicas=0`): la app muestra *"Sin conexión con la API"* y **no se cierra**. Vuelve a escalar a 2.
+3. Inicia sesión con el usuario del punto 1 (la app usa **SRP**: la contraseña no viaja): la app pide `GET /v1/products` con el **ID token** en `Authorization` y la clave en `x-api-key`, y muestra el catálogo.
+4. **Caos suave:** pon el teléfono en **modo avión**, o apaga la tienda (`kubectl -n urponline delete hpa urponline && kubectl -n urponline scale rollout urponline --replicas=0`): la app muestra *"Sin conexión con la API"* y **no se cierra**. Para volver: `kubectl apply -f k8s/deployment.yaml`.
 
-La app **no lleva secretos**: el cliente de Cognito es público (sin secreto) y el token vive solo en memoria.
+La app **no lleva secretos**: el cliente de Cognito es público (sin secreto), el token vive solo en memoria y la clave de API solo identifica a la app frente al plan de uso.
 
 ## Paso 7. Modelo de ML: predecir la saturación y escalar ANTES
 
@@ -228,7 +250,31 @@ kubectl -n urponline get hpa -w                    # MINPODS sube de 2 a 4+ ANTE
 
 **Fargate frente a EC2:** agrega a `k8s/eksctl-cluster.yaml` un `managedNodeGroups` (p. ej. 2 × `t3.medium` en `app-a`/`app-b`) con `eksctl create nodegroup -f k8s/eksctl-cluster.yaml`, despliega el **mismo** contenedor en otro namespace que no esté en el perfil de Fargate y comparen con la **misma** carga de k6: p95, pods por minuto de arranque y costo por hora (Fargate cobra vCPU/memoria por segundo; EC2 cobra la instancia aunque esté ociosa).
 
-**Blue/green con reversión automática:** esto lo construye el grupo. Lo mínimo: dos Deployments (`urponline-blue` y `urponline-green`, cada uno con su Service) y en el Ingress una acción con pesos (`alb.ingress.kubernetes.io/actions.<nombre>` con `forwardConfig.targetGroups` y `weight`). Para la **reversión automática** usen una herramienta que mire los errores y devuelva el tráfico sola, por ejemplo **Argo Rollouts** (estrategia `blueGreen` con un `AnalysisTemplate` sobre los 5xx de CloudWatch). Demuestren en vivo: suben una versión que devuelve errores y el tráfico vuelve solo a la anterior.
+**Blue/green con reversión automática (Argo Rollouts, ya configurado en `k8s/deployment.yaml`):**
+
+| Momento | Qué pasa |
+|---|---|
+| Publicas una versión nueva | se levanta **al lado** de la actual, detrás del Service `urponline-preview`, **sin tráfico** |
+| Prueba previa | un Job de **k6** (`k8s/bluegreen-analisis.yaml`) la ataca 1 minuto: si hay más de 1 % de errores o el p95 pasa de 2 s, **se aborta** y el tráfico sigue en la anterior |
+| Cambio | si la prueba pasa, el Service `urponline` (el del ALB) apunta a la versión nueva: **sin cortes** |
+| Prueba posterior | la misma prueba contra la versión activa: si falla, el tráfico **vuelve solo** a la anterior, que sigue encendida 5 min |
+| Versión que no arranca | si no está lista en 5 min, se aborta sola |
+
+```bash
+# Versión nueva buena: construye y sube v2 (paso 2 con :v2) y publícala
+kubectl argo rollouts set image urponline urponline=$ECR:v2 -n urponline
+kubectl argo rollouts get rollout urponline -n urponline --watch     # Preview -> análisis -> Active, "✔ Healthy"
+
+# Versión con error: arranca, pero no llega a la base (/health 200, catálogo 500)
+kubectl -n urponline patch rollout urponline --type json -p '[{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"ConnectionStrings__Postgres","value":"Host=no-existe;Port=5432;Database=urponline;Username=urponline;Timeout=3"}}]'
+kubectl argo rollouts get rollout urponline -n urponline --watch     # el análisis falla -> "✖ Degraded" (RolloutAborted)
+curl -s -o /dev/null -w "%{http_code}\n" http://$ING/api/v1/products   # 200: el tráfico SIGUE en la versión buena
+
+# Volver a la versión buena en el Rollout (quita el cambio y reintenta)
+kubectl argo rollouts undo urponline -n urponline
+```
+
+Demuéstrenlo **con carga** (k6 contra `http://$ING` mientras publican): durante el cambio y la reversión no debe haber errores.
 
 ## Paso 9. Qué presentar
 
@@ -242,7 +288,7 @@ kubectl -n urponline get hpa -w                    # MINPODS sube de 2 a 4+ ANTE
 ## Paso 10. Borrar todo (¡EKS cobra por hora!)
 
 ```bash
-kubectl delete -f k8s/prediccion.yaml -f k8s/deployment.yaml      # primero: así el controlador borra el ALB
+kubectl delete -f k8s/prediccion.yaml -f k8s/deployment.yaml -f k8s/bluegreen-analisis.yaml   # primero: así el controlador borra el ALB
 aws ec2 revoke-security-group-ingress --group-id $DB_SG    --protocol tcp --port 5432 --source-group $EKS_SG
 aws ec2 revoke-security-group-ingress --group-id $REDIS_SG --protocol tcp --port 6379 --source-group $EKS_SG
 eksctl delete cluster -f k8s/eksctl-cluster.yaml                  # 10-15 min
@@ -261,8 +307,9 @@ Si quitas los permisos del paso 3.3 **antes** de borrar el clúster, el security
 | Imagen del contenedor | `Dockerfile` · `.dockerignore` |
 | API JSON del catálogo para la app | `Controllers/ProductsApiController.cs` |
 | EKS sobre Fargate (VPC de la tienda, IRSA) | `k8s/eksctl-cluster.yaml` |
-| Tienda en Kubernetes (ConfigMap, Deployment, Service, Ingress, HPA) | `k8s/deployment.yaml` |
-| ECR, Cognito, API Gateway (JWT, /v1, 429), SNS, alarma, bucket del modelo | `infra/fase3-contenedores.yaml` |
+| Tienda en Kubernetes (ConfigMap, Rollout blue/green, Services, Ingress, HPA) | `k8s/deployment.yaml` |
+| Prueba automática del blue/green (k6) | `k8s/bluegreen-analisis.yaml` |
+| ECR, Cognito, API Gateway REST (autorizador, /v1, clave, plan de uso, 429), SNS, alarma, bucket del modelo | `infra/fase3-contenedores.yaml` |
 | App móvil (React Native + Cognito) | `mobile/` (`App.tsx`, `config.ts`) |
 | Dataset de telemetría | `ml/collect_metrics.py` |
 | Entrenar el modelo (CPU) | `ml/train.py` |
@@ -281,8 +328,8 @@ El código se entrega **hecho y probado**: ustedes lo **despliegan, lo amplían 
 | Imagen Docker | `Dockerfile` | reducir el tamaño de la imagen; dejar el escaneo de ECR sin CRITICAL |
 | EKS sobre Fargate | `k8s/eksctl-cluster.yaml` · `k8s/deployment.yaml` | desplegar; ajustar `resources` y el umbral del `HorizontalPodAutoscaler`; demostrar el autoescalado |
 | Fargate vs. EC2 | `k8s/eksctl-cluster.yaml` | agregar un `managedNodeGroups` y comparar costo y rendimiento |
-| Blue/green | `k8s/` | dos versiones + pesos en el Ingress + reversión automática (paso 8) |
-| Gestión de APIs | `infra/fase3-contenedores.yaml` | límite (429), ruta `/v2`, contrato OpenAPI y una REST API con claves y planes de uso |
+| Blue/green | `k8s/deployment.yaml` · `k8s/bluegreen-analisis.yaml` | ajustar la prueba (rutas, umbrales, duración) y demostrar el cambio y la reversión con carga (paso 8) |
+| Gestión de APIs | `infra/fase3-contenedores.yaml` | límites del plan (429), una clave sin plan (403), ruta `/v2` y el contrato OpenAPI exportado |
 | App móvil + Cognito | `mobile/` | refresco del token, pantallas (detalle, carrito), política de contraseñas y scopes en Cognito |
 | Patrones de agentes / JSON | servicios de los agentes (de la fase 2) | enrutador, planificar y ejecutar, orquestador, memoria; salida JSON validada |
 | Dataset de telemetría | `ml/collect_metrics.py` | qué métricas incluir y qué umbral de saturación tiene sentido |
