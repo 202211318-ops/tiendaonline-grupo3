@@ -490,6 +490,9 @@ Outputs:
   RedisPrimary: {Value: !GetAtt Redis.PrimaryEndPoint.Address}
   S3SupplierBucket: {Value: !Ref SupplierBucket}
   VpcId: {Value: !Ref VPC}
+  # Fase 2: la capa de agentes (infra/fase2-agentes.yaml) pone sus Lambdas en estas subredes y con este SG.
+  AppSubnets: {Description: Subredes privadas de aplicacion (AppA y AppB) separadas por coma, Value: !Join [',', [!Ref AppA, !Ref AppB]]}
+  AppSecurityGroup: {Description: Security group de la aplicacion (llega a RDS y Redis), Value: !Ref AppSG}
   # Fase 3: EKS se crea DENTRO de esta VPC (k8s/eksctl-cluster.yaml) para llegar a RDS y Redis.
   PublicSubnetA: {Description: Subred publica A (ALB del Ingress de EKS), Value: !Ref PublicA}
   PublicSubnetB: {Description: Subred publica B (ALB del Ingress de EKS), Value: !Ref PublicB}
