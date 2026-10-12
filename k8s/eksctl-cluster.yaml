@@ -51,6 +51,18 @@ iam:
             Action: [cloudwatch:PutMetricData]
             Resource: "*"
             Condition: { StringEquals: { "cloudwatch:namespace": URPOnline } }
+    # La misma tienda en nodos EC2 (comparacion Fargate vs. EC2, README paso 8): mismo permiso.
+    - metadata: { name: urponline, namespace: urponline-ec2 }
+      attachPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [secretsmanager:GetSecretValue]
+            Resource: "<DB_SECRET_ARN>"
+          - Effect: Allow
+            Action: [cloudwatch:PutMetricData]
+            Resource: "*"
+            Condition: { StringEquals: { "cloudwatch:namespace": URPOnline } }
     # El AWS Load Balancer Controller: crea el ALB a partir del Ingress (k8s/deployment.yaml).
     - metadata: { name: aws-load-balancer-controller, namespace: kube-system }
       wellKnownPolicies:

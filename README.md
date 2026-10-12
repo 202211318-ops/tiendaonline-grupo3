@@ -4,16 +4,25 @@
 
 ---
 
-# 🍴 PRIMERO: HAZ TU FORK. TRABAJA SOLO EN TU PROPIO REPOSITORIO
+# 🧑‍🤝‍🧑 PRIMERO: CREA EL REPOSITORIO DE TU GRUPO. TRABAJA SOLO EN ÉL
 
-Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desplegar. Cada grupo trabaja en **su propio fork**, que es su copia del laboratorio en su cuenta de GitHub. Ahí corren **sus** GitHub Actions contra **su** cuenta de AWS, y ese fork es el que se evalúa.
+Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios ni desplegar. Cada grupo crea **su propio repositorio**, sube ahí una copia del laboratorio y trabaja solo en él: ahí corren **sus** GitHub Actions contra **su** cuenta de AWS, y ese repositorio es el que se evalúa.
 
-1. Acepta la invitación que te llegó al correo de la universidad (o entra a https://github.com/orgs/cortexgovernor/invitation).
-2. Entra a https://github.com/cortexgovernor/tiendaonline → botón **Fork** (arriba a la derecha).
-3. En **Owner** elige **tu cuenta** (no `cortexgovernor`) → **Create fork**.
-4. Desde ahora usa **tu** repositorio: `https://github.com/TU_USUARIO/tiendaonline`. Ahí configuras los secretos, activas Actions y haces todos los cambios.
+1. Acepta la invitación que te llegó al correo de la universidad (o entra a https://github.com/orgs/cortexgovernor/invitation): sin ella no puedes clonar el laboratorio.
+2. **Un integrante crea el repositorio del grupo:** en GitHub, **+ → New repository** → *Owner*: su cuenta → *Repository name*: `tiendaonline-grupoN` (N = número del grupo) → **Private** → **sin** README, `.gitignore` ni licencia → **Create repository**.
+3. **Ese integrante clona el laboratorio del curso y lo sube al repositorio del grupo** (terminal de VS Code):
+   ```bash
+   git clone --branch fase-3 https://github.com/cortexgovernor/tiendaonline.git tiendaonline-grupoN
+   cd tiendaonline-grupoN
+   git branch -M main                       # la fase queda como rama main del grupo
+   git remote rename origin curso           # el repositorio del curso queda como "curso" (solo para leer)
+   git remote add origin https://github.com/TU_USUARIO/tiendaonline-grupoN.git
+   git push -u origin main
+   ```
+4. **Agrega a los demás integrantes y al profesor** como colaboradores (**Settings → Collaborators → Add people**). Cada integrante lo clona: `git clone https://github.com/TU_USUARIO/tiendaonline-grupoN.git`.
+5. El enlace de **ese** repositorio es el que se entrega con el video.
 
-> Un integrante del grupo hace el fork y agrega a los demás como colaboradores de **su** fork (**Settings → Collaborators → Add people**). El enlace de ese fork es el que se entrega con el video.
+> Si el curso publica una corrección de la fase: `git pull curso fase-3` y luego `git push`.
 
 ---
 
@@ -21,11 +30,11 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 
 ### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: 21 de noviembre de 2026** · participan **todos** los integrantes
 
-**4 categorías de 5 puntos, todo o nada** (notas 0, 5, 10, 15, 20). Sin GPU. Todo con **CloudFormation**. App móvil: **React Native**. Autenticación: **Amazon Cognito + integración propia del grupo**.
+**4 categorías de 5 puntos, todo o nada** (notas 0, 5, 10, 15, 20). Sin GPU. Todo como código (**CloudFormation**; `eksctl` también crea el clúster con CloudFormation). App móvil: **React Native**. Autenticación: **Amazon Cognito + integración propia del grupo**.
 
 | Categoría | Qué se evalúa (pasos y criterio de cumplimiento) | Puntos |
 |---|---|---|
-| **1. Contenedores y despliegue** | **Imagen Docker:** multietapa, publicada en ECR con escaneo, sin hallazgos críticos. **EKS sobre Fargate:** Deployment, Service e Ingress con autoescalado de pods. **Fargate vs. EC2:** el mismo contenedor en ambos; costo y rendimiento justificados. **Blue/green con reversión automática:** si al cambiar el tráfico suben los errores, vuelve solo a la versión anterior. | 5 o 0 |
+| **1. Contenedores y despliegue** | **Imagen Docker:** multietapa, publicada en ECR con escaneo, sin hallazgos críticos. **EKS sobre Fargate:** Rollout (Argo Rollouts), Service e Ingress con autoescalado de pods. **Fargate vs. EC2:** el mismo contenedor en ambos; costo y rendimiento justificados. **Blue/green con reversión automática:** si al cambiar el tráfico suben los errores, vuelve solo a la versión anterior. | 5 o 0 |
 | **2. IA, API y app móvil** | **API de la tienda** con contrato OpenAPI. **Gestión de APIs** (claves, planes de uso, 429 al superar el límite, versión /v1). **App React Native + Cognito** con la integración propia del grupo, sin secretos en la app. **Patrones de agentes** (enrutador, planificar y ejecutar vs. ReAct, orquestador con subagentes, humano en el ciclo y memoria). **JSON en el prompt** (salida validada por esquema; experimento texto libre vs. JSON; entre agentes y hacia la app). **Caos suave en la app** (cortar la red o la API sin que se cierre). | 5 o 0 |
 | **3. Validación — predecir toda la arquitectura** | **Dataset propio:** bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan. **Modelo de Machine Learning (ML) en CPU y open source** (scikit-learn, XGBoost/LightGBM o ML.NET, sin costo): aprende de su telemetría a predecir cuándo la arquitectura se va a saturar o fallar. **Para qué sirve:** tener un modelo que prediga el comportamiento de la plataforma y ayude a decidir cuándo escalar y cómo mejorar o rediseñar; presentan precisión y recall, y por **episodio de saturación** la cobertura y la anticipación frente a un modelo trivial de persistencia. **Escalado proactivo:** la predicción sube los pods antes de saturar + contador en CloudWatch y alerta por SNS. **Interpretación** de los resultados. | 5 o 0 |
 | **4. Sustentación individual** | Banco de **50 preguntas**; se sortean algunas por integrante. Si un integrante no sustenta, la categoría vale 0 y ese alumno tiene 0 en el trabajo. | 5 o 0 |
@@ -41,9 +50,15 @@ Este repositorio es **solo de lectura**: aquí no puedes subir cambios ni desple
 > Todo en la región **Ohio (`us-east-2`)**, la misma de la tienda.
 
 ```
- App React Native ──(token de Cognito + clave de API)──► API Gateway /v1 ──► ALB del Ingress ──► pods en EKS/Fargate ──► RDS + Redis
-                                                        401/403 sin token o clave · 429 si se pasa del plan                         (subredes privadas de la VPC de la tienda)
- CloudWatch ◄── métricas ── CronJob de predicción (ML) ──► sube el mínimo de pods del HPA ANTES de saturar + alerta SNS
+ App React Native
+   │  ID token de Cognito + clave de API
+   ▼
+ API Gateway (REST) /v1 ── 401 sin token · 403 sin clave · 429 si se pasa del plan
+   ▼
+ ALB del Ingress ──► pods de la tienda en EKS/Fargate ──► RDS + Redis
+                     (subredes privadas de la VPC de la tienda; blue/green con Argo Rollouts)
+
+ CloudWatch ──► CronJob de predicción (ML) ──► sube el mínimo de pods del HPA ANTES de saturar + alerta SNS
 ```
 
 ## Paso 0. Lo que necesitas antes de empezar
@@ -106,7 +121,19 @@ aws ecr describe-image-scan-findings --repository-name urponline --image-id imag
   --query "imageScanFindings.findingSeverityCounts"          # la rúbrica pide 0 CRITICAL
 ```
 
-El `Dockerfile` es **multietapa** (compila con el SDK, ejecuta solo con el runtime), corre como **usuario no root** y trae un `HEALTHCHECK` sobre `/health`. Pruébalo en tu PC antes de subirlo: `docker run -p 8080:8080 ...` (ver "Descargar y correr la tienda en tu equipo").
+El `Dockerfile` es **multietapa** (compila con el SDK, ejecuta solo con el runtime), corre como **usuario no root** y trae un `HEALTHCHECK` sobre `/health`. Pruébalo en tu PC **antes** de subirlo:
+
+```bash
+docker network create urp
+docker run -d --name urp-pg --network urp -e POSTGRES_USER=urponline -e POSTGRES_PASSWORD=localonly -e POSTGRES_DB=urponline pgvector/pgvector:pg16
+docker run -d --name urp-redis --network urp redis:7
+docker run -d --name urp-app --network urp -p 8080:8080 -e InitializeDatabase=true \
+  -e "ConnectionStrings__Postgres=Host=urp-pg;Port=5432;Database=urponline;Username=urponline;Password=localonly" \
+  -e "ConnectionStrings__Redis=urp-redis:6379" $ECR:v1
+docker inspect -f '{{.State.Health.Status}}' urp-app      # healthy (tarda ~30 s)
+curl http://localhost:8080/api/v1/products                 # el catálogo en JSON
+docker rm -f urp-app urp-pg urp-redis && docker network rm urp
+```
 
 ## Paso 3. Clúster EKS sobre Fargate, dentro de la VPC de la tienda
 
@@ -116,7 +143,7 @@ El `Dockerfile` es **multietapa** (compila con el SDK, ejecuta solo con el runti
    ```
 2. **Crea el clúster** (15-20 min). Crea también los roles IAM de los pods (IRSA): la tienda lee la contraseña de RDS de **Secrets Manager**, igual que las EC2; nunca hay Access Keys en un pod.
    ```bash
-   aws eks describe-cluster-versions --query "clusterVersions[?status=='STANDARD_SUPPORT'].clusterVersion"   # la versión del YAML debe estar aquí
+   aws eks describe-cluster-versions --query "clusterVersions[].[clusterVersion,endOfStandardSupportDate]" --output table   # la versión del YAML debe seguir en soporte estándar
    eksctl create cluster -f k8s/eksctl-cluster.yaml
    kubectl get nodes                                  # aparecen nodos "fargate-..."
    ```
@@ -248,7 +275,23 @@ kubectl -n urponline get hpa -w                    # MINPODS sube de 2 a 4+ ANTE
 
 ## Paso 8. Fargate frente a EC2, y blue/green
 
-**Fargate frente a EC2:** agrega a `k8s/eksctl-cluster.yaml` un `managedNodeGroups` (p. ej. 2 × `t3.medium` en `app-a`/`app-b`) con `eksctl create nodegroup -f k8s/eksctl-cluster.yaml`, despliega el **mismo** contenedor en otro namespace que no esté en el perfil de Fargate y comparen con la **misma** carga de k6: p95, pods por minuto de arranque y costo por hora (Fargate cobra vCPU/memoria por segundo; EC2 cobra la instancia aunque esté ociosa).
+**Fargate frente a EC2:** el **mismo** contenedor en un namespace `urponline-ec2`, que **no** está en el perfil de Fargate, así que sus pods van a nodos EC2. El clúster ya crea su ServiceAccount con permiso para leer el secreto de RDS (`k8s/eksctl-cluster.yaml`).
+
+```bash
+# Nodos EC2 en las subredes privadas de la tienda (usan el security group del clúster: ya llegan a RDS y Redis)
+eksctl create nodegroup --cluster urponline --name ec2 --node-type t3.medium --nodes 2 \
+  --node-private-networking --subnet-ids $APP_A,$APP_B
+# La misma tienda en el namespace urponline-ec2 (otro ALB, misma imagen y configuración)
+kubectl create namespace urponline-ec2
+sed 's/namespace: urponline$/namespace: urponline-ec2/; s/\.urponline\.svc/.urponline-ec2.svc/' \
+  k8s/bluegreen-analisis.yaml k8s/deployment.yaml | kubectl apply -f -
+kubectl -n urponline-ec2 get pods -o wide                # NODE: ip-10-0-11-x (EC2), no fargate-...
+ING_EC2=$(kubectl -n urponline-ec2 get ingress urponline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+k6 run -e BASE_URL=http://$ING pruebas/carga_stack.js      # Fargate
+k6 run -e BASE_URL=http://$ING_EC2 pruebas/carga_stack.js  # EC2
+```
+
+Comparen con la **misma** carga: p95, errores, segundos que tarda un pod nuevo en estar listo (`kubectl get pods -w`) y costo por hora (Fargate cobra vCPU y memoria por segundo; EC2 cobra la instancia aunque esté ociosa). Justifiquen con cuál se quedan.
 
 **Blue/green con reversión automática (Argo Rollouts, ya configurado en `k8s/deployment.yaml`):**
 
@@ -281,7 +324,7 @@ Demuéstrenlo **con carga** (k6 contra `http://$ING` mientras publican): durante
 1. La imagen en ECR con el escaneo **sin CRITICAL** y el `Dockerfile` multietapa.
 2. La tienda en **EKS/Fargate**: `kubectl get pods,hpa,ingress` y el autoescalado de pods bajo carga.
 3. Fargate vs. EC2 con números, y blue/green volviendo solo a la versión anterior.
-4. La API: 401 sin token, 200 con token, 429 al pasarse, `/v1` y `/v2`, claves y planes de uso (REST API).
+4. La API: 401 sin token, 403 sin clave (o con una clave sin plan), 200 con token y clave, 429 al pasarse del plan, `/v1` y `/v2`, y el contrato OpenAPI exportado.
 5. La app en un teléfono o emulador: login con Cognito, catálogo, y caos suave sin cerrarse.
 6. El ML: precisión, recall, **cobertura por episodio frente a la persistencia**, anticipación en minutos, y el HPA subiendo **antes** de saturar con la alerta de SNS.
 
@@ -289,6 +332,7 @@ Demuéstrenlo **con carga** (k6 contra `http://$ING` mientras publican): durante
 
 ```bash
 kubectl delete -f k8s/prediccion.yaml -f k8s/deployment.yaml -f k8s/bluegreen-analisis.yaml   # primero: así el controlador borra el ALB
+kubectl delete namespace urponline-ec2 --ignore-not-found                                       # el segundo ALB (comparación con EC2)
 aws ec2 revoke-security-group-ingress --group-id $DB_SG    --protocol tcp --port 5432 --source-group $EKS_SG
 aws ec2 revoke-security-group-ingress --group-id $REDIS_SG --protocol tcp --port 6379 --source-group $EKS_SG
 eksctl delete cluster -f k8s/eksctl-cluster.yaml                  # 10-15 min
@@ -389,7 +433,7 @@ boto3.client("cloudwatch").put_metric_data(Namespace="URPOnline", MetricData=[
 
 ## 💬 [Canal del curso: GitHub Discussions](https://github.com/cortexgovernor/tiendaonline/discussions)
 
-El canal es **único para todo el curso** (el del repositorio principal): ahí se comparten dudas de la rúbrica y los desafíos, respuestas del banco de preguntas, código y soluciones a errores. No abran un Discussions aparte en su fork. **Nunca publiquen secretos** (contraseñas, claves de AWS, tokens).
+El canal es **único para todo el curso** (el del repositorio principal): ahí se comparten dudas de la rúbrica y los desafíos, respuestas del banco de preguntas, código y soluciones a errores. No abran un Discussions aparte en el repositorio del grupo. **Nunca publiquen secretos** (contraseñas, claves de AWS, tokens).
 
 ---
 
@@ -662,34 +706,34 @@ Es el servicio de GitHub que ejecuta esos pasos. Las instrucciones viven en arch
 
 #### ¿Cómo entra GitHub a tu cuenta de AWS? (OIDC, sin Access Keys)
 
-GitHub necesita permiso para crear recursos en **tu** cuenta. En lugar de guardar tu Access Key en GitHub (peligroso si se filtra), se usa **OIDC**: creas en AWS un **rol IAM** que dice *"confío en GitHub, pero solo en la rama `main` del repositorio `TU_USUARIO/tiendaonline`"*. En cada ejecución GitHub pide a AWS credenciales **temporales** (duran minutos) para ese rol. Ese rol lo crea la plantilla [`infra/github-oidc.yaml`](infra/github-oidc.yaml).
+GitHub necesita permiso para crear recursos en **tu** cuenta. En lugar de guardar tu Access Key en GitHub (peligroso si se filtra), se usa **OIDC**: creas en AWS un **rol IAM** que dice *"confío en GitHub, pero solo en la rama `main` del repositorio `TU_USUARIO/tiendaonline-grupoN`"*. En cada ejecución GitHub pide a AWS credenciales **temporales** (duran minutos) para ese rol. Ese rol lo crea la plantilla [`infra/github-oidc.yaml`](infra/github-oidc.yaml).
 
 #### Configúralo en TU GitHub, paso a paso (una sola vez, ~15 min)
 
-**Paso 1 — Crea tu copia del repositorio (fork).**
-Entra a https://github.com/cortexgovernor/tiendaonline (con tu cuenta de GitHub iniciada) → botón **Fork** (arriba a la derecha) → **Create fork**. Ahora tienes `https://github.com/TU_USUARIO/tiendaonline`: ahí correrán **tus** workflows contra **tu** AWS.
+**Paso 1 — El repositorio del grupo.**
+Es el que crearon al inicio ("Crea el repositorio de tu grupo"): `https://github.com/TU_USUARIO/tiendaonline-grupoN`. Ahí correrán **sus** workflows contra **su** AWS.
 
 **Paso 2 — Crea en AWS el rol para GitHub (OIDC).** Elige una forma:
 
 - **Con la consola de AWS (sin terminal):**
   1. Descarga el archivo [`infra/github-oidc.yaml`](infra/github-oidc.yaml) (botón *Download raw file*).
   2. Consola de AWS (región **Ohio**) → **CloudFormation → Create stack → With new resources** → **Upload a template file** → elige `github-oidc.yaml` → **Next**.
-  3. **Stack name:** `urponline-github-oidc` · **GitHubOwner:** tu usuario de GitHub · **RepoName:** `tiendaonline` → **Next** → **Next**.
+  3. **Stack name:** `urponline-github-oidc` · **GitHubOwner:** tu usuario de GitHub · **RepoName:** `tiendaonline-grupoN` (el nombre de **su** repositorio) → **Next** → **Next**.
   4. Marca *"I acknowledge that AWS CloudFormation might create IAM resources with custom names"* → **Submit**.
   5. Cuando diga `CREATE_COMPLETE` (≈1 min) → pestaña **Outputs** → copia el valor de **`RoleArn`** (`arn:aws:iam::123456789012:role/urponline-github-deploy-tiendaonline`).
 - **Con CloudShell** (icono `>_` en la consola de AWS):
   ```bash
-  git clone https://github.com/TU_USUARIO/tiendaonline.git && cd tiendaonline
+  git clone https://github.com/TU_USUARIO/tiendaonline-grupoN.git && cd tiendaonline-grupoN
   aws cloudformation deploy --stack-name urponline-github-oidc --region us-east-2 \
     --template-file infra/github-oidc.yaml --capabilities CAPABILITY_NAMED_IAM \
-    --parameter-overrides GitHubOwner=TU_USUARIO RepoName=tiendaonline
+    --parameter-overrides GitHubOwner=TU_USUARIO RepoName=tiendaonline-grupoN
   aws cloudformation describe-stacks --stack-name urponline-github-oidc --region us-east-2 \
     --query "Stacks[0].Outputs[0].OutputValue" --output text
   ```
 
 > Si sale *"Provider with url https://token.actions.githubusercontent.com already exists"*: tu cuenta ya tenía la conexión. Repite con el parámetro **CreateOidcProvider = false**.
 
-**Paso 3 — Guarda 2 secretos en tu fork.** Los *secrets* son valores privados que los workflows pueden usar pero que nadie ve (ni en los logs).
+**Paso 3 — Guarda 2 secretos en el repositorio del grupo.** Los *secrets* son valores privados que los workflows pueden usar pero que nadie ve (ni en los logs).
 En GitHub → **tu** repositorio → **Settings** (pestaña de arriba) → menú izquierdo **Secrets and variables → Actions** → botón **New repository secret**. Crea estos dos:
 
 | Name | Secret |
@@ -699,11 +743,11 @@ En GitHub → **tu** repositorio → **Settings** (pestaña de arriba) → menú
 
 (Opcional) Si no usas Ohio: pestaña **Variables** → **New repository variable** → `AWS_REGION` = `us-east-1`.
 
-**Paso 4 — Activa Actions en tu fork.** En los forks GitHub los deja apagados por seguridad: pestaña **Actions** → botón verde *"I understand my workflows, go ahead and enable them"*.
+**Paso 4 — Comprueba que Actions esté activo.** En un repositorio nuevo viene activado: pestaña **Actions** → deben aparecer los 3 workflows. Si dice que están desactivados, pulsa **Enable**.
 
 **Paso 5 — Primer despliegue.** Pestaña **Actions** → en la izquierda **Desplegar en AWS** → botón **Run workflow** → **Run workflow**. Haz clic en la ejecución que aparece para ver cada paso en vivo (≈25 min la primera vez, porque crea toda la infraestructura). Al terminar, abre el **Summary**: muestra la **URL de la tienda** y las EC2 *healthy* detrás del ALB.
 
-**Paso 6 — Comprueba el CI/CD con un cambio real.** En VS Code (con tu fork clonado) cambia un texto, por ejemplo en `Views/Home/Index.cshtml`, y súbelo:
+**Paso 6 — Comprueba el CI/CD con un cambio real.** En VS Code (con el repositorio del grupo clonado) cambia un texto, por ejemplo en `Views/Home/Index.cshtml`, y súbelo:
 
 ```powershell
 git add .
@@ -724,9 +768,11 @@ winget install GitHub.cli
 # Iniciar sesión en GitHub con permiso para workflows (abre el navegador: pega el código que muestra y "Authorize")
 gh auth login --web --scopes workflow
 
-# Paso 1: crear tu fork y clonarlo en la carpeta actual
-gh repo fork cortexgovernor/tiendaonline --clone
-cd tiendaonline
+# Paso 1: clonar el laboratorio y crear con él el repositorio privado del grupo
+git clone --branch fase-3 https://github.com/cortexgovernor/tiendaonline.git tiendaonline-grupoN
+cd tiendaonline-grupoN
+git branch -M main && git remote rename origin curso
+gh repo create TU_USUARIO/tiendaonline-grupoN --private --source . --remote origin --push
 code . -r
 
 # Paso 2 (AWS): crear el rol OIDC — mismos comandos de la sección anterior, con GitHubOwner=TU_USUARIO
@@ -735,7 +781,7 @@ code . -r
 gh secret set AWS_ROLE_ARN
 gh secret set DB_PASSWORD
 
-# Paso 4: activar los workflows del fork
+# Paso 4: activar los workflows (en un repositorio nuevo ya lo están; no hace daño)
 gh workflow enable ci.yml
 gh workflow enable deploy-aws.yml
 gh workflow enable destroy-aws.yml
