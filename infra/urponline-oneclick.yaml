@@ -374,7 +374,7 @@ Resources:
             dnf install -y nginx unzip amazon-cloudwatch-agent aspnetcore-runtime-8.0
             mkdir -p /opt/urponline
             aws s3 cp s3://${ArtifactBucket}/${ArtifactKey} /tmp/urp.zip
-            unzip -oq /tmp/urp.zip -d /opt/urponline
+            unzip -oq /tmp/urp.zip -d /opt/urponline || [ $? -eq 1 ]   # 1 = solo advertencia (ZIP hecho en Windows); el test siguiente valida
             test -f /opt/urponline/TiendaOnline.dll
             chown -R nginx:nginx /opt/urponline
             cat >/etc/urponline.env <<'ENV'
@@ -696,6 +696,10 @@ Resources:
   # AUDITORIA: CloudTrail registra quien hizo que en la cuenta (todas las regiones), con validacion de integridad.
   TrailBucket:
     Type: AWS::S3::Bucket
+    # Con registros dentro CloudFormation no puede borrarlo: se conserva al borrar o revertir la pila
+    # (el workflow Destruir AWS lo borra despues; vence a los 30 dias).
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketEncryption: {ServerSideEncryptionConfiguration: [{ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}}]}
       PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
@@ -725,6 +729,7 @@ Resources:
       IncludeGlobalServiceEvents: true
       EnableLogFileValidation: true
 Outputs:
+  TrailBucketName: {Description: 'Bucket de CloudTrail (se conserva al borrar la pila; borrarlo con aws s3 rb --force)', Value: !Ref TrailBucket}
   ALBDNS: {Value: !GetAtt ALB.DNSName}
   DashboardURL: {Description: Telemetría de todos los servicios en una pantalla (CloudWatch), Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/URPOnline-${AWS::StackName}'}
   ApplicationHTTPS: {Description: URL segura de la tienda (CloudFront), Value: !Sub "https://${CDN.DomainName}"}
