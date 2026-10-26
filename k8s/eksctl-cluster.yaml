@@ -12,7 +12,7 @@ kind: ClusterConfig
 
 metadata:
   name: urponline
-  region: us-east-2   # Ohio: la misma region del resto del curso (tienda, ECR, API Gateway, Cognito)
+  region: us-east-2   # Ohio: la misma region del resto del curso (tienda, ECR)
   # Version con soporte estandar. Comprueba las vigentes con: aws eks describe-cluster-versions
   version: "1.34"
 

@@ -26,34 +26,31 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ---
 
-# 📋 FASE 3 — IA, APPS MÓVILES Y CONTENEDORES · RÚBRICA (20 PUNTOS)
+# 📋 FASE 3 — DOCKER, KUBERNETES Y ML · RÚBRICA (20 PUNTOS)
 
 ### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: 21 de noviembre de 2026** · participan **todos** los integrantes
 
-**4 categorías de 5 puntos, todo o nada** (notas 0, 5, 10, 15, 20). Sin GPU. Todo como código (**CloudFormation**; `eksctl` también crea el clúster con CloudFormation). App móvil: **React Native**. Autenticación: **Amazon Cognito + integración propia del grupo**.
+**4 categorías de 5 puntos, todo o nada** (notas 0, 5, 10, 15, 20). Sin GPU. Todo como código (**CloudFormation**; `eksctl` también crea el clúster con CloudFormation).
 
 | Categoría | Qué se evalúa (pasos y criterio de cumplimiento) | Puntos |
 |---|---|---|
 | **1. Contenedores y despliegue** | **Imagen Docker:** multietapa, publicada en ECR con escaneo, sin hallazgos críticos. **EKS sobre Fargate:** Rollout (Argo Rollouts), Service e Ingress con autoescalado de pods. **Fargate vs. EC2:** el mismo contenedor en ambos; costo y rendimiento justificados. **Blue/green con reversión automática:** si al cambiar el tráfico suben los errores, vuelve solo a la versión anterior. | 5 o 0 |
-| **2. IA, API y app móvil** | **API de la tienda** con contrato OpenAPI. **Gestión de APIs** (claves, planes de uso, 429 al superar el límite, versión /v1). **App React Native + Cognito** con la integración propia del grupo, sin secretos en la app. **Patrones de agentes** (enrutador, planificar y ejecutar vs. ReAct, orquestador con subagentes, humano en el ciclo y memoria). **JSON en el prompt** (salida validada por esquema; experimento texto libre vs. JSON; entre agentes y hacia la app). **Caos suave en la app** (cortar la red o la API sin que se cierre). | 5 o 0 |
+| **2. Agente de operaciones de Kubernetes** | Lo construye el grupo sobre los agentes de la fase 2. **Planificar y ejecutar:** el agente arma el plan completo de un despliegue blue/green o de un escalado antes de ejecutarlo; se compara con ReAct sobre el mismo caso. **Orquestador con subagentes:** ante un incidente, un supervisor reparte el trabajo entre subagentes de métricas (CloudWatch), de Kubernetes (**solo lectura**, RBAC mínimo) y de predicción (el ML de la categoría 3). **Memoria:** recuerda los incidentes anteriores del clúster y qué acción funcionó. **Interpretación:** qué decidió el agente, por qué y dónde se equivocó. | 5 o 0 |
 | **3. Validación — predecir toda la arquitectura** | **Dataset propio:** bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan. **Modelo de Machine Learning (ML) en CPU y open source** (scikit-learn, XGBoost/LightGBM o ML.NET, sin costo): aprende de su telemetría a predecir cuándo la arquitectura se va a saturar o fallar. **Para qué sirve:** tener un modelo que prediga el comportamiento de la plataforma y ayude a decidir cuándo escalar y cómo mejorar o rediseñar; presentan precisión y recall, y por **episodio de saturación** la cobertura y la anticipación frente a un modelo trivial de persistencia. **Escalado proactivo:** la predicción sube los pods antes de saturar + contador en CloudWatch y alerta por SNS. **Interpretación** de los resultados. | 5 o 0 |
 | **4. Sustentación individual** | Banco de **50 preguntas**; se sortean algunas por integrante. Si un integrante no sustenta, la categoría vale 0 y ese alumno tiene 0 en el trabajo. | 5 o 0 |
 
-**Requisitos:** video con toda la implementación (participan todos, entregado el día anterior); la app llega instalada en un dispositivo o emulador. **Cada categoría es todo o nada. El alumno que no sustenta tiene 0.**
+**Requisitos:** video con toda la implementación (participan todos, entregado el día anterior). **Cada categoría es todo o nada. El alumno que no sustenta tiene 0.**
 
 
 ---
 
 # 🚀 DESPLEGAR Y PROBAR LA FASE 3, PASO A PASO
 
-> Todo con **CloudFormation y eksctl** (infraestructura como código). **EKS cobra el clúster por hora** aunque no tenga carga: créalo, pruébalo, **bórralo** (paso 10) y recréalo para la presentación.
+> Todo con **CloudFormation y eksctl** (infraestructura como código). **EKS cobra el clúster por hora** aunque no tenga carga: créalo, pruébalo, **bórralo** (paso 8) y recréalo para la presentación.
 > Todo en la región **Ohio (`us-east-2`)**, la misma de la tienda.
 
 ```
- App React Native
-   │  ID token de Cognito + clave de API
-   ▼
- API Gateway (REST) /v1 ── 401 sin token · 403 sin clave · 429 si se pasa del plan
+ Usuarios / k6
    ▼
  ALB del Ingress ──► pods de la tienda en EKS/Fargate ──► RDS + Redis
                      (subredes privadas de la VPC de la tienda; blue/green con Argo Rollouts)
@@ -75,7 +72,6 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 | Helm | instalar el controlador del ALB | `winget install Helm.Helm` | `helm version` |
 | Python 3.11+ | el modelo de ML | `winget install Python.Python.3.12` | `python --version` |
 | k6 | generar carga | `winget install k6` | `k6 version` |
-| Node.js 20 LTS | la app móvil (Expo) | `winget install OpenJS.NodeJS.LTS` | `node --version` |
 
 3. **Las variables de la tienda.** Los comandos de esta guía son de **Bash** (Git Bash, WSL o CloudShell). Copia los Outputs de `URPOnlineLab` en variables:
 
@@ -89,24 +85,21 @@ SECRET=$(out URPOnlineLab DbSecretArn);     DB_SG=$(out URPOnlineLab DbSecurityG
 echo "$VPC $APP_A $APP_B $RDS $REDIS"       # si sale vacío, actualiza la pila URPOnlineLab con el YAML de esta rama
 ```
 
-## Paso 1. Pila de la fase 3: ECR, Cognito, API Gateway, alertas y bucket del modelo
+## Paso 1. Pila de la fase 3: ECR, alertas y bucket del modelo
 
 ```bash
 aws cloudformation deploy --stack-name urponline-fase3 \
   --template-file infra/fase3-contenedores.yaml --capabilities CAPABILITY_IAM \
-  --parameter-overrides AppNameUrl=http://pendiente.invalid CorreoAlertas=tu-correo@ejemplo.com
+  --parameter-overrides CorreoAlertas=tu-correo@ejemplo.com
 ECR=$(out urponline-fase3 EcrRepoUri);  ECR_ML=$(out urponline-fase3 EcrMlRepoUri)
 MODELOS=$(out urponline-fase3 ModelosBucket);  SNS=$(out urponline-fase3 AlertasTopicArn)
 ```
 
-- `AppNameUrl` todavía no existe (es el ALB que creará EKS en el paso 4): por ahora va un valor provisional y en el **paso 5** se actualiza.
 - Te llega un correo de AWS: **confirma la suscripción** para recibir las alertas de saturación.
 
 | Crea | Para qué |
 |---|---|
 | ECR `urponline` y `urponline-ml` (con escaneo) | las imágenes de la tienda y del predictor |
-| Cognito (User Pool + cliente sin secreto) | el inicio de sesión de la app |
-| API Gateway **REST API**: autorizador de Cognito, ruta `/v1/{proxy+}`, **clave de API** y **plan de uso** (10 req/s por clave, ráfaga 20, 100 000 al mes) | la API gestionada: sin token → 401, sin clave → 403, si se pasa → 429 |
 | SNS `urponline-alertas` + alarma `urponline-saturacion-predicha` | la alerta cuando el ML predice saturación |
 | S3 `urponline-modelos-…` (cifrado, privado) | donde vive `modelo.joblib` |
 
@@ -165,7 +158,7 @@ docker rm -f urp-app urp-pg urp-redis && docker network rm urp
      --set serviceAccount.name=aws-load-balancer-controller --set region=$AWS_REGION --set vpcId=$VPC
    kubectl -n kube-system rollout status deployment aws-load-balancer-controller
    ```
-6. **Instala Argo Rollouts** (el blue/green con reversión automática del paso 8) y su plugin de kubectl:
+6. **Instala Argo Rollouts** (el blue/green con reversión automática del paso 6) y su plugin de kubectl:
    ```bash
    kubectl create namespace argo-rollouts
    kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/download/v1.7.2/install.yaml
@@ -179,7 +172,7 @@ docker rm -f urp-app urp-pg urp-redis && docker network rm urp
 
 ```bash
 sed -i "s|<ECR_IMAGE>|$ECR:v1|; s|<RDS_ENDPOINT>|$RDS|; s|<REDIS_ENDPOINT>|$REDIS|; s|<DB_SECRET_ARN>|$SECRET|; s|<PUBLIC_A>|$PUB_A|; s|<PUBLIC_B>|$PUB_B|" k8s/deployment.yaml
-kubectl apply -f k8s/bluegreen-analisis.yaml      # la prueba automática del blue/green (paso 8)
+kubectl apply -f k8s/bluegreen-analisis.yaml      # la prueba automática del blue/green (paso 6)
 kubectl apply -f k8s/deployment.yaml               # ConfigMap + Rollout + Services + Ingress + HPA
 kubectl argo rollouts get rollout urponline -n urponline --watch   # espera "Status: ✔ Healthy" (Ctrl+C)
 ING=$(kubectl -n urponline get ingress urponline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
@@ -188,57 +181,9 @@ curl http://$ING/api/v1/products                   # el catálogo en JSON
 kubectl -n urponline get hpa                       # TARGETS debe mostrar un % de CPU, no <unknown>
 ```
 
-**Autoescalado de pods:** con carga (paso 7) mira `kubectl -n urponline get hpa -w`: al pasar el 60 % de CPU suben las réplicas (hasta 10).
+**Autoescalado de pods:** con carga (paso 5) mira `kubectl -n urponline get hpa -w`: al pasar el 60 % de CPU suben las réplicas (hasta 10).
 
-## Paso 5. Conectar API Gateway con la tienda
-
-```bash
-aws cloudformation deploy --stack-name urponline-fase3 \
-  --template-file infra/fase3-contenedores.yaml --capabilities CAPABILITY_IAM \
-  --parameter-overrides AppNameUrl=http://$ING
-API=$(out urponline-fase3 ApiUrl)                  # https://....execute-api.us-east-2.amazonaws.com/prod/v1
-CLAVE=$(aws apigateway get-api-key --api-key $(out urponline-fase3 ApiKeyId) --include-value --query value --output text)
-
-# Usuario de prueba y su token (ID token de Cognito)
-POOL=$(out urponline-fase3 UserPoolId); CLIENTE=$(out urponline-fase3 UserPoolClientId)
-aws cognito-idp admin-create-user --user-pool-id $POOL --username alumno@ejemplo.com \
-  --user-attributes Name=email,Value=alumno@ejemplo.com Name=email_verified,Value=true --message-action SUPPRESS
-aws cognito-idp admin-set-user-password --user-pool-id $POOL --username alumno@ejemplo.com --password 'Clave2026Segura' --permanent
-TOKEN=$(aws cognito-idp initiate-auth --client-id $CLIENTE --auth-flow USER_PASSWORD_AUTH \
-  --auth-parameters USERNAME=alumno@ejemplo.com,PASSWORD='Clave2026Segura' --query AuthenticationResult.IdToken --output text)
-
-curl -s -o /dev/null -w "%{http_code}\n" -H "x-api-key: $CLAVE" $API/products                       # 401: sin token
-curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: $TOKEN" $API/products                    # 403: sin clave de API
-curl -s -H "Authorization: $TOKEN" -H "x-api-key: $CLAVE" $API/products                               # 200: el catálogo
-for i in $(seq 1 60); do curl -s -o /dev/null -w "%{http_code} " -H "Authorization: $TOKEN" -H "x-api-key: $CLAVE" $API/products & done; wait; echo   # aparecen 429
-```
-
-- `/v1/{proxy}` de API Gateway llega a `/api/v1/{proxy}` de la tienda (`Controllers/ProductsApiController.cs`): `GET /v1/products` y `GET /v1/products/{id}`.
-- **Clave de API y plan de uso:** la clave identifica a la app frente al **plan** `urponline-basico` (10 solicitudes/s por clave, ráfaga 20, 100 000 al mes); al pasarse, **429**. Una clave que **no** está en el plan recibe **403**: créala sin asociarla y pruébala. La clave no es un secreto de autenticación (al usuario lo autentica Cognito).
-- **Contrato OpenAPI:** expórtalo de la API desplegada:
-  ```bash
-  aws apigateway get-export --rest-api-id $(out urponline-fase3 RestApiId) --stage-name prod --export-type oas30 \
-    --parameters extensions=apigateway openapi.json
-  ```
-- **Versionado:** agrega en el YAML un recurso `v2` con su `{proxy+}` y su método hacia `/api/v2/{proxy}` (más el controlador `v2` en la tienda) **y cambia el nombre lógico de `ApiDeployment`** para que se publique; la app que usa `/v1` no se rompe.
-
-## Paso 6. App móvil (React Native + Expo + Cognito)
-
-1. **Usuario de prueba:** el que creaste en el paso 5 (`alumno@ejemplo.com`).
-2. **Configura y arranca la app:**
-   ```bash
-   cd mobile
-   npm install
-   # Edita config.ts: API_URL = Output ApiUrl (ya termina en /v1); API_KEY = el valor de $CLAVE (paso 5);
-   # UserPoolId y ClientId = Outputs UserPoolId y UserPoolClientId
-   npx expo start                                  # escanea el QR con Expo Go o abre un emulador (tecla a / i)
-   ```
-3. Inicia sesión con el usuario del punto 1 (la app usa **SRP**: la contraseña no viaja): la app pide `GET /v1/products` con el **ID token** en `Authorization` y la clave en `x-api-key`, y muestra el catálogo.
-4. **Caos suave:** pon el teléfono en **modo avión**, o apaga la tienda (`kubectl -n urponline delete hpa urponline && kubectl -n urponline scale rollout urponline --replicas=0`): la app muestra *"Sin conexión con la API"* y **no se cierra**. Para volver: `kubectl apply -f k8s/deployment.yaml`.
-
-La app **no lleva secretos**: el cliente de Cognito es público (sin secreto), el token vive solo en memoria y la clave de API solo identifica a la app frente al plan de uso.
-
-## Paso 7. Modelo de ML: predecir la saturación y escalar ANTES
+## Paso 5. Modelo de ML: predecir la saturación y escalar ANTES
 
 Detalle de cómo funciona: sección **"Cómo implementar el modelo de ML"** más abajo.
 
@@ -273,7 +218,7 @@ kubectl -n urponline get hpa -w                    # MINPODS sube de 2 a 4+ ANTE
 
 **Qué deben ver:** en CloudWatch (namespace `URPOnline`) las métricas `SaturacionPredicha` y `SaturacionProbabilidad`; la alarma `urponline-saturacion-predicha` en rojo y el correo de SNS **antes** de la saturación; y el `MINPODS` del HPA subiendo. **Compárenlo** con el escalado solo por CPU (reactivo): ¿cuántos minutos antes reaccionó cada uno?
 
-## Paso 8. Fargate frente a EC2, y blue/green
+## Paso 6. Fargate frente a EC2, y blue/green
 
 **Fargate frente a EC2:** el **mismo** contenedor en un namespace `urponline-ec2`, que **no** está en el perfil de Fargate, así que sus pods van a nodos EC2. El clúster ya crea su ServiceAccount con permiso para leer el secreto de RDS (`k8s/eksctl-cluster.yaml`).
 
@@ -319,16 +264,15 @@ kubectl argo rollouts undo urponline -n urponline
 
 Demuéstrenlo **con carga** (k6 contra `http://$ING` mientras publican): durante el cambio y la reversión no debe haber errores.
 
-## Paso 9. Qué presentar
+## Paso 7. Qué presentar
 
 1. La imagen en ECR con el escaneo **sin CRITICAL** y el `Dockerfile` multietapa.
 2. La tienda en **EKS/Fargate**: `kubectl get pods,hpa,ingress` y el autoescalado de pods bajo carga.
 3. Fargate vs. EC2 con números, y blue/green volviendo solo a la versión anterior.
-4. La API: 401 sin token, 403 sin clave (o con una clave sin plan), 200 con token y clave, 429 al pasarse del plan, `/v1` y `/v2`, y el contrato OpenAPI exportado.
-5. La app en un teléfono o emulador: login con Cognito, catálogo, y caos suave sin cerrarse.
-6. El ML: precisión, recall, **cobertura por episodio frente a la persistencia**, anticipación en minutos, y el HPA subiendo **antes** de saturar con la alerta de SNS.
+4. El agente de operaciones: el plan antes de ejecutar (frente a ReAct), el orquestador repartiendo un incidente entre sus subagentes y la memoria de un incidente anterior.
+5. El ML: precisión, recall, **cobertura por episodio frente a la persistencia**, anticipación en minutos, y el HPA subiendo **antes** de saturar con la alerta de SNS.
 
-## Paso 10. Borrar todo (¡EKS cobra por hora!)
+## Paso 8. Borrar todo (¡EKS cobra por hora!)
 
 ```bash
 kubectl delete -f k8s/prediccion.yaml -f k8s/deployment.yaml -f k8s/bluegreen-analisis.yaml   # primero: así el controlador borra el ALB
@@ -349,12 +293,11 @@ Si quitas los permisos del paso 3.3 **antes** de borrar el clúster, el security
 | Parte | Archivo |
 |---|---|
 | Imagen del contenedor | `Dockerfile` · `.dockerignore` |
-| API JSON del catálogo para la app | `Controllers/ProductsApiController.cs` |
+| API JSON del catálogo (la usa la prueba del blue/green) | `Controllers/ProductsApiController.cs` |
 | EKS sobre Fargate (VPC de la tienda, IRSA) | `k8s/eksctl-cluster.yaml` |
 | Tienda en Kubernetes (ConfigMap, Rollout blue/green, Services, Ingress, HPA) | `k8s/deployment.yaml` |
 | Prueba automática del blue/green (k6) | `k8s/bluegreen-analisis.yaml` |
-| ECR, Cognito, API Gateway REST (autorizador, /v1, clave, plan de uso, 429), SNS, alarma, bucket del modelo | `infra/fase3-contenedores.yaml` |
-| App móvil (React Native + Cognito) | `mobile/` (`App.tsx`, `config.ts`) |
+| ECR, SNS, alarma, bucket del modelo | `infra/fase3-contenedores.yaml` |
 | Dataset de telemetría | `ml/collect_metrics.py` |
 | Entrenar el modelo (CPU) | `ml/train.py` |
 | Predecir + escalado proactivo | `ml/predict.py` · `ml/Dockerfile` · `k8s/prediccion.yaml` |
@@ -372,10 +315,8 @@ El código se entrega **hecho y probado**: ustedes lo **despliegan, lo amplían 
 | Imagen Docker | `Dockerfile` | reducir el tamaño de la imagen; dejar el escaneo de ECR sin CRITICAL |
 | EKS sobre Fargate | `k8s/eksctl-cluster.yaml` · `k8s/deployment.yaml` | desplegar; ajustar `resources` y el umbral del `HorizontalPodAutoscaler`; demostrar el autoescalado |
 | Fargate vs. EC2 | `k8s/eksctl-cluster.yaml` | agregar un `managedNodeGroups` y comparar costo y rendimiento |
-| Blue/green | `k8s/deployment.yaml` · `k8s/bluegreen-analisis.yaml` | ajustar la prueba (rutas, umbrales, duración) y demostrar el cambio y la reversión con carga (paso 8) |
-| Gestión de APIs | `infra/fase3-contenedores.yaml` | límites del plan (429), una clave sin plan (403), ruta `/v2` y el contrato OpenAPI exportado |
-| App móvil + Cognito | `mobile/` | refresco del token, pantallas (detalle, carrito), política de contraseñas y scopes en Cognito |
-| Patrones de agentes / JSON | servicios de los agentes (de la fase 2) | enrutador, planificar y ejecutar, orquestador, memoria; salida JSON validada |
+| Blue/green | `k8s/deployment.yaml` · `k8s/bluegreen-analisis.yaml` | ajustar la prueba (rutas, umbrales, duración) y demostrar el cambio y la reversión con carga (paso 6) |
+| Agente de operaciones | servicios de los agentes (de la fase 2) | planificar y ejecutar frente a ReAct, orquestador con subagentes (Kubernetes solo lectura), memoria de incidentes |
 | Dataset de telemetría | `ml/collect_metrics.py` | qué métricas incluir y qué umbral de saturación tiene sentido |
 | Modelo de ML | `ml/train.py` | algoritmo, horizonte y señales; reportar precisión, recall y la comparación con la persistencia |
 | Escalado proactivo | `ml/predict.py` · `k8s/prediccion.yaml` | cuántos pods agregar (`--pods-extra`) y comparar contra el escalado por CPU |

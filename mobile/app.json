@@ -1,9 +1,0 @@
-{
-  "expo": {
-    "name": "URPOnline",
-    "slug": "urponline-movil",
-    "scheme": "urponline",
-    "version": "1.0.0",
-    "platforms": ["ios", "android"]
-  }
-}

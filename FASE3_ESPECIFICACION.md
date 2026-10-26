@@ -31,5 +31,5 @@
 
 ## 4. Costos
 
-- **EKS cobra por el clúster aunque no tenga carga** (aprox. 0,10 USD por hora): se crea, se prueba y se borra (README, paso 10).
+- **EKS cobra por el clúster aunque no tenga carga** (aprox. 0,10 USD por hora): se crea, se prueba y se borra (README, paso 8).
 - Fargate cobra por vCPU y memoria por segundo mientras los pods corren.

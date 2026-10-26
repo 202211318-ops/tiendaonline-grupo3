@@ -3,8 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TiendaOnline.Data;
 namespace TiendaOnline.Controllers;
 
-// Fase 3 - API JSON del catalogo para la app movil. API Gateway publica /v1/{proxy} y lo reenvia a
-// /api/v1/{proxy} de la tienda; el JWT de Cognito ya lo valido API Gateway antes de llegar aqui.
+// Fase 3 - API JSON del catalogo: la usa la prueba automatica del blue/green (k8s/bluegreen-analisis.yaml)
 public record ProductDto(int Id,string Name,string Description,decimal Price,int Stock,string Category);
 
 [ApiController]
