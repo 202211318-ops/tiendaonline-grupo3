@@ -1,6 +1,6 @@
 # Fase 3 — URPOnline: IA agéntica de punta a punta, a escala latinoamericana (especificación)
 
-> Rama `fase-3`. Presentación: sábado 21 de noviembre de 2026, **40 minutos por grupo**, todo en vivo. El caso completo, los 38 desafíos, el guion de la presentación, las advertencias de costo y la guía paso a paso están en el `README.md`; la rúbrica Word se genera del mismo texto (`RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`). Este documento resume el alcance y la arquitectura; si algo difiere, manda el README.
+> Rama `fase-3`. Presentación: sábado 21 de noviembre de 2026, **40 minutos por grupo**, todo en vivo. El caso completo, los 39 desafíos, el guion de la presentación, las advertencias de costo y la guía paso a paso están en el `README.md`; la rúbrica Word se genera del mismo texto (`RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`). Este documento resume el alcance y la arquitectura; si algo difiere, manda el README.
 
 **Objetivo del curso:** que los alumnos construyan un portafolio de proyectos con experiencias y casos reales que les permita usarlo en entrevistas y evaluaciones de trabajo.
 
@@ -42,12 +42,13 @@ Lo que construye cada grupo está en la sección «Lo que ya trae el repositorio
 | Orquestador con subagentes | Ante una caída provocada en vivo, un supervisor reparte entre subagentes de métricas, de Kubernetes (solo lectura) y de predicción |
 | Memoria | Recuerda los incidentes anteriores y qué acción funcionó |
 | Gobierno | Solo lectura, aprobación humana para todo cambio y bitácora auditable con MTTR |
+| Explicación | Al menos un agente explicado línea por línea frente a su traza, con el razonamiento del modelo encendido (F7) |
 
 ## 4. Costos
 
 Detalle con precios verificados y reglas en «Advertencias de costo» del README. Lo principal: EKS 0,10 USD por hora por existir; dos NAT Gateway a 0,045 USD por hora cada uno; RDS con réplica o Multi-AZ duplica la base; WAF unos 9 USD al mes; **AWS Network Firewall 0,395 USD por hora por endpoint** (el más caro: solo para la prueba y la presentación). Se crea, se prueba y se borra; presupuesto de AWS Budgets antes de empezar.
 
-## 5. Rúbrica: 38 desafíos en 6 bloques (20 puntos, todo o nada por bloque)
+## 5. Rúbrica: 39 desafíos en 6 bloques (20 puntos, todo o nada por bloque)
 
 | Bloque | Desafíos | Puntos |
 |---|---|---|
@@ -56,7 +57,7 @@ Detalle con precios verificados y reglas en «Advertencias de costo» del README
 | C. Monitoreo y autorrecuperación | C1–C6 | 3 |
 | D. Seguridad en cada capa y defensa contra Thanos | D1–D8 | 3 |
 | E. Capacidad y costo anticipados con Machine Learning | E1–E6 | 3 |
-| F. La cadena de valor con IA agéntica, gobernada | F1–F6 | 4 |
-| **Total** | **38** | **20** |
+| F. La cadena de valor con IA agéntica, gobernada | F1–F7 | 4 |
+| **Total** | **39** | **20** |
 
 Cada desafío se construye, se demuestra en vivo y se explica; el profesor elige a qué integrante preguntar. Si un desafío falla o no se sabe explicar, su bloque vale 0. Video obligatorio el día anterior con todos los integrantes y la cámara encendida. El texto de cada desafío está en el README.

@@ -26,7 +26,7 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ---
 
-# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 38 DESAFÍOS (20 PUNTOS)
+# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 39 DESAFÍOS (20 PUNTOS)
 
 ## ➡️ [Descargar la rúbrica: `RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx)
 
@@ -107,7 +107,7 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 
 **Lo que se llevan.** Esto no es un ejercicio de aula: es lo que hace un **equipo de plataforma y seguridad real** cuando una empresa crece, levanta capital y se prepara para salir a bolsa. El grupo que lo logre sale con un **portafolio que puede mostrar en una entrevista de trabajo**: una plataforma que aguanta caídas, que se defiende de un agente de IA y que se explica con evidencia.
 
-**38 desafíos en 6 bloques, todo o nada por bloque.** Cada desafío se construye, se demuestra en vivo y se explica. El profesor elige a qué integrante preguntar; si un desafío falla o no se sabe explicar, su bloque vale 0. Video obligatorio el día anterior, con todos los integrantes y la cámara encendida.
+**39 desafíos en 6 bloques, todo o nada por bloque.** Cada desafío se construye, se demuestra en vivo y se explica. El profesor elige a qué integrante preguntar; si un desafío falla o no se sabe explicar, su bloque vale 0. Video obligatorio el día anterior, con todos los integrantes y la cámara encendida.
 
 | Bloque | Desafíos | Puntos |
 |---|---|---|
@@ -116,12 +116,12 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 | C. Monitoreo y autorrecuperación | 13 a 18 | 3 |
 | D. Seguridad en cada capa y defensa contra Thanos | 19 a 26 | 3 |
 | E. Capacidad y costo anticipados con Machine Learning | 27 a 32 | 3 |
-| F. La cadena de valor con IA agéntica, gobernada | 33 a 38 | 4 |
-| **Total** | **38** | **20** |
+| F. La cadena de valor con IA agéntica, gobernada | 33 a 39 | 4 |
+| **Total** | **39** | **20** |
 
 ---
 
-## 🎯 Los 38 desafíos
+## 🎯 Los 39 desafíos
 
 ### Bloque A — Crecer sin cortes: contenedores y despliegue (3 puntos)
 1. **A1. Imagen Docker.** Dockerfile de varias etapas, publicado en ECR con escaneo sin hallazgos críticos y con la imagen reducida. *Explicar:* qué hace cada etapa y por qué la imagen final es más pequeña y segura.
@@ -182,6 +182,7 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 36. **F4. Memoria de incidentes.** Un segundo incidente parecido se resuelve con la memoria del primero. *Explicar:* qué guarda la memoria y qué no.
 37. **F5. Solo lectura y aprobación humana.** El subagente de Kubernetes tiene RBAC e IAM de solo lectura (su intento de borrar un pod se rechaza), y toda acción que cambia producción espera la aprobación de una persona. *Explicar:* por qué un agente no debe cambiar la producción por su cuenta.
 38. **F6. Bitácora auditable de los agentes.** Cada decisión de un agente queda registrada con qué hizo, con qué datos, por qué, quién aprobó y cuánto tardó (MTTR en los incidentes). *Explicar:* qué le muestra esa bitácora a un auditor antes de salir a bolsa.
+39. **F7. Explicar el código de un agente con su razonamiento.** Eligen **al menos un agente** (el de stock con ReAct, el de carrito generador-crítico, el analista, el de soporte o su agente de operaciones), encienden el **razonamiento del modelo y la traza paso a paso**, lo ejecutan en vivo y explican **su código** frente a esa traza: dónde se arma el prompt, dónde decide el modelo, dónde se llama cada herramienta y con qué datos, qué lo hace parar (`StopPolicy`: iteraciones y presupuesto de tokens) y qué bloquean los guardrails. El código está en `Services/Agents/` (`AgentLoop.cs`, `StockAgent.cs`, `CartAgent.cs`, `AnalystAgent.cs`, `SupportAgent.cs`, `Guardrails.cs`). El profesor señala una línea del código o un paso de la traza y cualquier integrante explica qué pasó y por qué. Además **plantean qué cambiarían en ese agente, o muestran qué cambiaron, y por qué**: el prompt, una herramienta, la regla de parada, un guardrail o el modelo, con la traza **de antes y de después** que prueba la mejora (menos pasos, menos tokens, una decisión correcta que antes era incorrecta). *Opcional:* reescriben ese agente con Microsoft Agent Framework y comparan las dos trazas. *Explicar:* qué decidió el modelo y qué decidió el código, qué habría pasado si el modelo se equivocaba en ese paso, y por qué su cambio lo hace mejor (o qué empeoró).
 
 ---
 
@@ -196,7 +197,7 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 | 9 – 20 | B y C | Reparto de carga en la web, la API y la base (réplica). Se cae un pod web, luego una réplica de la API y **se desconecta la base de datos**: en cada caída llega la alarma, el tablero muestra la falla y el reemplazo se crea solo. Tiempo de recuperación por capa, el SLO con su presupuesto de errores y la medición de C6 del video. |
 | 20 – 29 | D | El WAF bloquea el script que prueba contraseñas; gitleaks frena un commit con una key; una imagen vulnerable no llega al clúster; la web no llega a la base; el agente no se deja manipular; GuardDuty detecta y la respuesta contiene; el sniffer alerta. El plan contra Thanos en 3 minutos, con el inventario de **su** cuenta. |
 | 29 – 34 | E | El modelo: precisión, recall y anticipación frente a la persistencia; el escalado proactivo que ya ocurrió durante el bloque B; la capa que se satura primero; el costo de abrir un país. |
-| 34 – 38 | F | Un pedido recorre la cadena sin intervención; la caída de la base de datos del bloque B resuelta por el orquestador con sus subagentes y su memoria; el subagente sin permiso para borrar; la bitácora con quién aprobó y el MTTR. |
+| 34 – 38 | F | Un pedido recorre la cadena sin intervención; la caída de la base de datos del bloque B resuelta por el orquestador con sus subagentes y su memoria; el subagente sin permiso para borrar; la bitácora con quién aprobó y el MTTR; el código de un agente explicado frente a su traza con el razonamiento encendido. |
 | 38 – 40 | Cierre | Cuánto costó la plataforma durante la presentación y qué harían con un mes más. |
 
 > Si algo falla en vivo, **se dice y se explica por qué**: un fallo bien diagnosticado frente al profesor vale más que un video perfecto. Pero el desafío que falla no suma.
@@ -483,7 +484,7 @@ Todo el código de las fases 1 y 2 (tienda, agentes, delivery, apps móviles) es
 
 **Orden de despliegue:** pila `URPOnlineLab` (con `EnableReadReplica=true`) → pila `urponline-fase3` (`infra/fase3-contenedores.yaml`) → `eksctl create cluster -f k8s/eksctl-cluster.yaml` → `kubectl apply` de `paises.yaml`, `bluegreen-analisis.yaml`, `deployment.yaml` (sin la línea del WAF), `api-pedidos.yaml`, `proveedores-cronjob.yaml`, `prediccion.yaml` y `agente-solo-lectura.yaml` → pila `urponline-fase3-seguridad` (`infra/fase3-seguridad.yaml`, con el nombre del ALB que creó el Ingress) → anotar el Ingress con el `WebAclArn` (paso 7).
 
-**Lo que construye el grupo:** A3 (nodos EC2 para comparar), A6 (pipeline con OIDC hasta EKS), B6 (failover medido), C3–C6 (recuperación medida, SLO con presupuesto de errores, recuperación ante desastres), D2–D8 (secretos, imágenes revisadas, aislamiento de red, manipulación de agentes, GuardDuty y contención, plan contra Thanos, sniffer), E4–E6 y F2–F4, F6 (agente de operaciones, orquestador, memoria y bitácora).
+**Lo que construye el grupo:** A3 (nodos EC2 para comparar), A6 (pipeline con OIDC hasta EKS), B6 (failover medido), C3–C6 (recuperación medida, SLO con presupuesto de errores, recuperación ante desastres), D2–D8 (secretos, imágenes revisadas, aislamiento de red, manipulación de agentes, GuardDuty y contención, plan contra Thanos, sniffer), E4–E6 y F2–F4, F6, F7 (agente de operaciones, orquestador, memoria, bitácora y la explicación del código de un agente con su razonamiento).
 
 ---
 
