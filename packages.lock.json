@@ -50,6 +50,15 @@
           "AWSSDK.Core": "[3.7.400.35, 4.0.0)"
         }
       },
+      "AWSSDK.SecurityToken": {
+        "type": "Direct",
+        "requested": "[3.7.400.35, )",
+        "resolved": "3.7.400.35",
+        "contentHash": "rKtLC6qSW3nyfSvFKGUU/gUrFKVypq0Pif8IZKzId9HBpH0FgSmCvZhFCRXoPggnqcKib52CWtequ//7JholPQ==",
+        "dependencies": {
+          "AWSSDK.Core": "[3.7.400.35, 4.0.0)"
+        }
+      },
       "Microsoft.AspNetCore.DataProtection.StackExchangeRedis": {
         "type": "Direct",
         "requested": "[8.0.11, )",

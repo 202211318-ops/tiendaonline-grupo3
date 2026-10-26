@@ -29,7 +29,7 @@ vpc:
 # Todo el namespace urponline (y los componentes de kube-system) corre en Fargate, en las subredes privadas.
 fargateProfiles:
   - name: urponline-fp
-    subnets: [app-a, app-b]
+    subnets: [<APP_A>, <APP_B>]       # IDs reales: eksctl no acepta aqui los alias app-a/app-b de vpc.subnets
     selectors:
       - namespace: urponline
       - namespace: urponline-cl        # Chile (A5, k8s/paises.yaml)

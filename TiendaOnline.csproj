@@ -23,6 +23,8 @@
     <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.400" />
     <PackageReference Include="AWSSDK.S3" Version="3.7.401" />
     <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.400.35" />
+    <!-- Fase 3: sin este paquete el SDK no puede usar el rol IAM del pod en EKS (IRSA, AssumeRoleWithWebIdentity) -->
+    <PackageReference Include="AWSSDK.SecurityToken" Version="3.7.400.35" />
     <PackageReference Include="AWSSDK.CloudWatch" Version="3.7.401" />
     <PackageReference Include="AWSSDK.EventBridge" Version="3.7.401" />
   </ItemGroup>

@@ -156,6 +156,14 @@
           "AWSSDK.Core": "[3.7.400.35, 4.0.0)"
         }
       },
+      "AWSSDK.SecurityToken": {
+        "type": "Transitive",
+        "resolved": "3.7.400.35",
+        "contentHash": "rKtLC6qSW3nyfSvFKGUU/gUrFKVypq0Pif8IZKzId9HBpH0FgSmCvZhFCRXoPggnqcKib52CWtequ//7JholPQ==",
+        "dependencies": {
+          "AWSSDK.Core": "[3.7.400.35, 4.0.0)"
+        }
+      },
       "Google.Protobuf": {
         "type": "Transitive",
         "resolved": "3.30.2",
@@ -434,6 +442,7 @@
           "AWSSDK.Extensions.NETCore.Setup": "[3.7.400, )",
           "AWSSDK.S3": "[3.7.401, )",
           "AWSSDK.SecretsManager": "[3.7.400.35, )",
+          "AWSSDK.SecurityToken": "[3.7.400.35, )",
           "Microsoft.AspNetCore.DataProtection.StackExchangeRedis": "[8.0.11, )",
           "Microsoft.Extensions.Caching.StackExchangeRedis": "[8.0.0, )",
           "Microsoft.ML.OnnxRuntime": "[1.30.0, )",
