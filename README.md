@@ -26,55 +26,182 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ---
 
-# 📋 FASE 3 — CRECER EN LATINOAMÉRICA: DOCKER, KUBERNETES Y ML · 20 DESAFÍOS (20 PUNTOS)
+# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 37 DESAFÍOS (20 PUNTOS)
 
 ## ➡️ [Descargar la rúbrica: `RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx)
 
 ### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: sábado 21 de noviembre de 2026** · participan **todos** los integrantes · **todo en vivo**
 
-## El negocio
+## 📖 El caso
 
-URPOnline **recibió capital de inversión para crecer en toda Latinoamérica**. El plan es abrir la tienda y el delivery en varios países a la vez, y para que la inversión rinda tiene que cumplir tres cosas.
+### De tienda en línea a startup regional
+URPOnline empezó en Lima como una tienda en línea de tecnología (fase 1). En 2026 abrió una línea de delivery de comida con agentes de IA (fase 2) y en pocos meses llegó a **180 000 clientes activos, 350 restaurantes aliados y 1 200 repartidores**. Sus clientes son en su mayoría jóvenes que compran desde el celular y que se cambian a la competencia con un toque si la app no responde.
 
-**Retener a sus clientes.** Cada país nuevo trae picos que nadie predice a mano: el lanzamiento en Bogotá, el Cyber de Santiago, la hora del almuerzo en Ciudad de México. Si la tienda se cae o se pone lenta en ese momento, el cliente nuevo no vuelve. La plataforma tiene que escalar sola, desplegar sin cortes y anticipar la saturación antes de que ocurra.
+En octubre de 2026 URPOnline **cerró una ronda de inversión Serie A de 12 millones de dólares** con un fondo de capital de riesgo regional. El compromiso con los inversionistas es claro: **abrir Colombia, Chile y México en los próximos doce meses** con el mismo equipo de tecnología, **triplicar los pedidos** y **preparar la empresa para salir a bolsa** en tres años.
 
-**Integrar toda su cadena de valor en forma automatizada.** Proveedores, catálogo, pedidos, pagos, restaurantes y repartidores tienen que funcionar como una sola operación, sin personas copiando datos entre sistemas ni revisando servidores uno por uno.
+### Lo que salió mal en el último Cyber Day
+El último Cyber Day fue una advertencia. A las 20:04 la base de datos llegó al máximo de conexiones; la tienda empezó a responder en 9 segundos y después dejó de responder. **Estuvo caída 47 minutos.** Nadie del equipo se enteró hasta que los clientes empezaron a reclamar en redes sociales. Había un solo servidor de base de datos, el monitoreo miraba solo la CPU y el reinicio se hizo a mano. Se estimó una pérdida de **4 200 pedidos** y un pico de cancelaciones en los días siguientes.
 
-**Prepararse para salir a bolsa.** Los inversionistas y los reguladores no compran promesas: piden evidencia de disponibilidad, costos predecibles, capacidad planificada, operación auditable y controles que impidan cambios no autorizados en producción.
+Ese mismo mes hubo dos incidentes de seguridad. Un **bot probó miles de contraseñas robadas** contra el inicio de sesión de la tienda durante toda una madrugada sin que nada lo frenara. Y un desarrollador **subió por error una API key a un repositorio**; se detectó tres días después.
 
-**Lo que hace el grupo.** Construye esa evidencia con Docker, Kubernetes (EKS sobre Fargate), Machine Learning en CPU y un agente de operaciones de solo lectura, todo desplegado con CloudFormation. **EKS cobra por hora:** se crea, se prueba, se borra y se recrea para la presentación. **20 desafíos en 4 bloques de 5 puntos, todo o nada:** cada desafío se construye, se demuestra en vivo y se explica; el profesor elige a qué integrante preguntar, y si un desafío falla o no se sabe explicar, su bloque vale 0.
+### El ataque de Thanos
+Dos semanas después del Cyber Day, el equipo de seguridad detectó algo distinto: **Thanos, un agente de IA ofensivo** que exploraba la plataforma de URPOnline de forma autónoma. No probaba contraseñas al azar como el bot de la madrugada: leía las respuestas de la tienda, cambiaba de táctica según lo que encontraba, intentaba manipular al agente de soporte con instrucciones escondidas y **capturaba el tráfico cifrado** que salía de la plataforma.
 
-## 🎯 Los 20 desafíos
+El informe de inteligencia que recibió el directorio dice que Thanos usa **descifrado cuántico**. Una computadora cuántica suficientemente grande puede romper el cifrado de **clave pública que hoy protege casi todo Internet** —RSA y curvas elípticas—: el intercambio de claves de TLS (HTTPS), las firmas de los certificados y de los tokens de inicio de sesión, y las llaves SSH. El cifrado simétrico como **AES-256** y los resúmenes como **SHA-256** resisten mucho mejor. La estrategia del atacante se conoce como **«cosechar ahora, descifrar después»**: guarda hoy el tráfico cifrado para descifrarlo cuando tenga la capacidad cuántica. Los datos que tienen que seguir siendo secretos dentro de diez años —datos personales, historial de compras, información de pago— ya están en riesgo hoy.
 
-### Bloque A — Crecer sin cortes: contenedores y despliegue (5 puntos)
+El directorio fue claro: con capital de inversión y la intención de salir a bolsa, **esto no puede volver a pasar**, y pidió al equipo de plataforma **un plan para enfrentar a Thanos**, sustentado con la arquitectura real de URPOnline.
+
+### La visión: el primer comercio electrónico basado en IA agéntica de punta a punta
+URPOnline quiere **llegar a ser el primer comercio electrónico de Latinoamérica basado en IA agéntica de punta a punta en todos sus procesos**: que cada proceso del negocio, desde el proveedor hasta la puerta del cliente y la operación de la propia plataforma, lo mueva un agente de IA que **percibe, decide y actúa** dentro de reglas claras, con una persona supervisando lo que es de alto impacto.
+
+Para eso, cada eslabón de la cadena de valor tiene su agente:
+- **Abastecimiento:** el catálogo de los proveedores se importa solo, y un agente de stock detecta lo que se está acabando y propone la orden de compra.
+- **Venta:** un agente recupera los carritos abandonados con ofertas dentro de las reglas del negocio, y la búsqueda entiende lo que el cliente pide, incluido lo que no quiere.
+- **Atención:** un agente de soporte responde con la política y los contratos, sin inventar, y pasa a una persona lo que no le corresponde decidir.
+- **Entrega:** los pedidos se ofrecen a los repartidores cercanos, el cliente ve llegar su pedido en el mapa y nada se pierde aunque el repartidor pierda la señal.
+- **Análisis:** un agente analista revisa las ventas y cancelaciones de todos los clientes y alerta al negocio cuando algo cambia.
+- **Operación:** un agente de operaciones vigila la plataforma, encuentra la causa de los incidentes y recuerda lo que funcionó antes.
+
+Todo conectado por eventos, sin personas copiando datos entre sistemas ni revisando servidores uno por uno. Los agentes **proponen**; lo que es de alto impacto —una compra grande, un reembolso alto, un cambio en producción— lo **aprueba una persona**, y cada decisión queda registrada para poder explicarla.
+
+Una IA agéntica de punta a punta solo vale si la plataforma que la sostiene **nunca se detiene y no se puede vulnerar**: un agente que no puede actuar porque se cayó un servidor no sirve, y un agente que alguien puede manipular es un riesgo. Por eso la visión exige cuatro compromisos.
+
+### Compromiso 1: retener a cada cliente nuevo
+Cada país trae picos que nadie predice a mano: el lanzamiento en Bogotá, el Cyber de Santiago, la hora del almuerzo en Ciudad de México. En el próximo Cyber Day se esperan **3 000 pedidos por minuto** en el pico. Si la tienda se cae o se pone lenta en ese momento, el cliente nuevo no vuelve, y conseguir otro cuesta mucho más que conservarlo. Por eso:
+- **Ninguna capa puede depender de un solo servidor.** La **web**, la **capa de negocio** y la **base de datos** tienen la carga repartida entre varios nodos en dos zonas de disponibilidad.
+- **Si se cae un nodo de cualquier capa, otro toma su lugar** y el caído **se recrea solo**, sin que nadie lo levante a mano.
+- **Todo se ve en el monitoreo**: cuándo cayó, quién tomó la carga, cuánto tardó en recuperarse y cuántos clientes lo notaron. El equipo se entera **antes** que los clientes.
+- La plataforma **escala sola**, **despliega versiones nuevas sin cortes** y **anticipa la saturación** antes de que ocurra.
+- **Un país no tumba a otro:** si el Cyber de Chile satura su parte, Perú sigue vendiendo.
+
+### Compromiso 2: operar la cadena de valor sin intervención manual
+Proveedores, catálogo, pedidos, pagos, restaurantes y repartidores funcionan como **una sola operación automatizada y movida por agentes**. Con más países y más servicios, operar a mano ya no escala: cada tarea repetida que hace una persona es una tarea que se olvida un fin de semana.
+
+### Compromiso 3: una plataforma que no se puede vulnerar
+URPOnline guarda datos personales y de pago de clientes de cuatro países, y cada país tiene su ley de protección de datos (en Perú, la Ley 29733). Un incidente de seguridad no solo cuesta dinero: puede frenar la salida a bolsa. Por eso:
+- Los ataques automatizados (bots, agentes como Thanos, prueba de contraseñas robadas) se **bloquean en la entrada**.
+- **Ningún secreto vive en el código ni en una imagen**, y un secreto subido por error se detecta **antes** de llegar al repositorio.
+- Solo se despliegan **imágenes revisadas y sin vulnerabilidades críticas**.
+- Cada capa habla **solo con la que necesita**: la web no llega directo a la base de datos.
+- Los agentes de IA **no se dejan manipular** con instrucciones escondidas en lo que escriben los clientes.
+- Una actividad sospechosa en la cuenta o en el clúster se **detecta, se avisa y se contiene** sola.
+- La plataforma tiene un **plan de migración a criptografía post-cuántica** para lo que debe seguir secreto en diez años.
+
+### Compromiso 4: prepararse para salir a bolsa
+Los inversionistas, los auditores y los reguladores del mercado de valores no compran una promesa: **piden evidencia**. Y con agentes de IA tomando decisiones, piden todavía más. Para salir a bolsa, URPOnline necesita demostrar:
+- **Disponibilidad medida:** un objetivo de servicio (99,5 % del tiempo y respuestas en menos de medio segundo) y el tablero que lo prueba.
+- **Recuperación probada:** si cae un servidor, una base de datos o el clúster entero, cuánto tarda en volver y qué datos se conservan.
+- **Costos predecibles:** cuánto cuesta cada país y cada servicio, con un presupuesto que avisa antes de pasarse, y una elección de infraestructura justificada con números.
+- **Capacidad planificada:** un modelo que predice cuándo se va a saturar la plataforma, para escalar antes y planificar la apertura de cada país con datos.
+- **Agentes gobernados y auditables:** qué decidió cada agente, con qué datos, quién aprobó y cuánto tardó, en una bitácora que un auditor puede revisar.
+- **Controles y separación de funciones:** ningún agente, ningún sistema automático y ninguna persona puede cambiar la producción por su cuenta; todo cambio pasa por el pipeline y por CloudFormation.
+
+### Lo que hace el grupo
+El grupo es el **equipo de plataforma** que el directorio contrató para que el próximo Cyber Day salga bien, para enfrentar a Thanos y para presentarle evidencia a los inversionistas. Construye esa evidencia sobre la plataforma de las fases 1 y 2, con **Docker y Kubernetes (EKS sobre Fargate)**, **balanceo de carga en la web, en la capa de negocio y en la base de datos (RDS con réplica)**, **monitoreo con recuperación automática**, **seguridad en cada capa**, **Machine Learning en CPU** y **agentes de IA**, todo desplegado con CloudFormation.
+
+**Cada falla y cada ataque se provocan en vivo, contra la propia infraestructura del grupo, y se ven en el monitoreo.** EKS, las réplicas y los servicios de seguridad **cobran por hora**: se crean, se prueban, se borran y se recrean para la presentación.
+
+**37 desafíos en 6 bloques, todo o nada por bloque.** Cada desafío se construye, se demuestra en vivo y se explica. El profesor elige a qué integrante preguntar; si un desafío falla o no se sabe explicar, su bloque vale 0. Video obligatorio el día anterior, con todos los integrantes y la cámara encendida.
+
+| Bloque | Desafíos | Puntos |
+|---|---|---|
+| A. Crecer sin cortes: contenedores y despliegue | 1 a 6 | 3 |
+| B. Balanceo de carga y caída de cada capa | 7 a 12 | 4 |
+| C. Monitoreo y autorrecuperación | 13 a 18 | 3 |
+| D. Seguridad en cada capa y defensa contra Thanos | 19 a 25 | 3 |
+| E. Capacidad y costo anticipados con Machine Learning | 26 a 31 | 3 |
+| F. La cadena de valor con IA agéntica, gobernada | 32 a 37 | 4 |
+| **Total** | **37** | **20** |
+
+---
+
+## 🎯 Los 37 desafíos
+
+### Bloque A — Crecer sin cortes: contenedores y despliegue (3 puntos)
 1. **A1. Imagen Docker.** Dockerfile de varias etapas, publicado en ECR con escaneo sin hallazgos críticos y con la imagen reducida. *Explicar:* qué hace cada etapa y por qué la imagen final es más pequeña y segura.
-2. **A2. EKS sobre Fargate.** La tienda en EKS sobre Fargate, con autoescalado de pods demostrado bajo carga. *Explicar:* por qué EKS y Fargate no son alternativas.
+2. **A2. EKS sobre Fargate con autoescalado.** La tienda en EKS sobre Fargate; bajo carga (k6) los pods suben y bajan solos. *Explicar:* por qué EKS y Fargate no son alternativas.
 3. **A3. Fargate frente a EC2.** El mismo contenedor en los dos, con tabla de costo y rendimiento y elección justificada. *Explicar:* cuándo conviene cada uno.
 4. **A4. Blue/green con reversión automática.** Versión nueva sin errores durante el cambio, y vuelta atrás sola cuando suben los errores. *Explicar:* qué pasa con las sesiones durante el cambio.
 5. **A5. Un país no tumba a otro.** Un namespace por país con su cuota de recursos: saturar un país no degrada al otro. *Explicar:* cómo aíslan los namespaces y las cuotas.
+6. **A6. Despliegue al clúster solo por el pipeline.** GitHub Actions con OIDC construye la imagen, la publica y la despliega en EKS; un `kubectl apply` manual desde una laptop se rechaza. *Explicar:* por qué un regulador exige esta separación de funciones.
 
-### Bloque B — Capacidad anticipada con Machine Learning (5 puntos)
-6. **B1. Dataset propio.** Bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan (saturado / no saturado). *Explicar:* por qué su propia telemetría es mejor que un dataset ajeno.
-7. **B2. Modelo en CPU y open source.** Predice la saturación de los próximos minutos; reproducible, con precisión, recall y cobertura de episodios, y mejor que el modelo trivial de persistencia. *Explicar:* por qué precisión y recall, y no solo el acierto.
-8. **B3. Escalado proactivo.** La predicción sube los pods antes de saturar, en vivo con k6, con contador en CloudWatch y alerta por SNS. *Explicar:* escalar por reacción frente a escalar por predicción.
-9. **B4. Capacidad y costo de un país nuevo.** Con el modelo y sus mediciones, proyectan cuántos pods y cuánto costo mensual necesita abrir un país más. *Explicar:* qué supuestos usaron y qué los haría equivocarse.
-10. **B5. Interpretación.** Qué señales anticipan la saturación, con cuánta anticipación y cuánto cuesta una alarma falsa frente a una caída sin aviso. *Explicar:* qué cambiarían en la arquitectura con lo que reveló el modelo.
+### Bloque B — Balanceo de carga y caída de cada capa (4 puntos)
+7. **B1. Balanceo en la web.** El ALB reparte el tráfico entre varios pods de la tienda en dos zonas de disponibilidad. *En vivo:* el tráfico de k6 se reparte entre los pods de las dos zonas. *Explicar:* qué decide el ALB y con qué chequeo de salud.
+8. **B2. Balanceo en la capa de negocio.** La API de pedidos corre con varias réplicas en dos zonas detrás de su propio balanceo (Service de Kubernetes), y las Lambdas del delivery escalan por concurrencia. *En vivo:* las solicitudes se reparten entre réplicas. *Explicar:* balanceo interno frente al del ALB.
+9. **B3. Balanceo en la base de datos.** RDS con una réplica de lectura: el catálogo y la búsqueda leen de la réplica; los pedidos y pagos escriben en el primario. *En vivo:* las conexiones y la CPU muestran la carga repartida. *Explicar:* por qué las escrituras no se reparten igual y qué es el retraso de réplica.
+10. **B4. Se cae un nodo de la web.** Con tráfico en vivo, se elimina un pod (o un nodo) de la tienda. *En vivo:* la tienda sigue respondiendo; se cuentan los errores y su duración. *Explicar:* cómo dejó el ALB de enviarle tráfico.
+11. **B5. Se cae un nodo de la capa de negocio.** Con tráfico en vivo, se elimina una réplica de la API de pedidos. *En vivo:* los pedidos siguen entrando, sin perder ninguno. *Explicar:* qué pasó con las solicitudes que estaban en curso.
+12. **B6. Se cae la base de datos.** Con tráfico en vivo, se fuerza el failover de RDS (o se promueve la réplica). *En vivo:* cuánto tiempo no hubo escrituras y si se perdió algún pedido. *Explicar:* qué hace la aplicación mientras la base cambia de primario, y por qué el Cyber Day pasado no habría caído 47 minutos.
 
-### Bloque C — Operación madura: agente de operaciones (5 puntos)
-11. **C1. Planificar y ejecutar.** El agente arma el plan completo de un despliegue o de un escalado antes de ejecutarlo, comparado con ReAct sobre el mismo caso. *Explicar:* cuándo conviene planificar antes y cuándo ReAct.
-12. **C2. Orquestador con subagentes.** Ante un incidente inyectado en vivo, un supervisor reparte entre los subagentes de métricas, de Kubernetes y de predicción hasta llegar a la causa. *Explicar:* cómo reparte y qué pasa si un subagente falla.
-13. **C3. Memoria de incidentes.** Un segundo incidente parecido se resuelve con la memoria del primero. *Explicar:* qué guarda la memoria y qué no.
-14. **C4. Solo lectura y aprobación humana.** El subagente de Kubernetes tiene RBAC e IAM de solo lectura (su intento de borrar un pod se rechaza) y toda acción que cambia el clúster espera la aprobación de una persona. *Explicar:* por qué el agente no debe cambiar el clúster por su cuenta.
-15. **C5. Bitácora auditable.** Cada incidente queda registrado con qué se hizo, por qué, quién lo aprobó y cuánto tardó en resolverse (MTTR). *Explicar:* qué le muestra esa bitácora a un auditor.
+### Bloque C — Monitoreo y autorrecuperación (3 puntos)
+13. **C1. Tablero de salud por capa.** Un tablero de CloudWatch con la web (targets del ALB, 5xx, p95), la capa de negocio (réplicas sanas, errores) y la base de datos (conexiones, CPU, retraso de réplica). *Explicar:* qué métrica de cada capa avisa primero.
+14. **C2. Alarmas por capa.** Una alarma por capa que avisa por SNS cuando cae un nodo o se acerca el límite de conexiones de la base. *En vivo:* en las caídas de B4 a B6 llega la alarma antes de que un cliente reclame. *Explicar:* cómo eligieron cada umbral.
+15. **C3. La instancia se recrea sola.** En cada caída, Kubernetes, Auto Scaling o RDS crean el reemplazo sin intervención; el tablero muestra la caída y la recuperación. *Explicar:* quién detecta la caída en cada capa y quién crea el reemplazo.
+16. **C4. Tiempo de recuperación por capa.** Miden cuánto tardó cada capa en volver (web, negocio y base de datos) y lo comparan. *Explicar:* cuál tardó más y qué harían para acortarlo.
+17. **C5. Disponibilidad demostrable (SLO).** Un objetivo de servicio (99,5 % y p95 menor a 500 ms) medido con su presupuesto de errores, incluidas las caídas provocadas. *Explicar:* qué hacen cuando se gasta el presupuesto de errores.
+18. **C6. Recuperación ante desastres.** Borran el clúster y lo recrean desde cero con CloudFormation, midiendo cuánto tarda (RTO) y comprobando que los datos siguen en RDS. *Explicar:* qué se pierde y qué no cuando cae todo el clúster.
 
-### Bloque D — Cadena de valor integrada y lista para la bolsa (5 puntos)
-16. **D1. Cadena de valor automatizada.** La importación de proveedores corre sola en el clúster (CronJob) y un pedido de la tienda o del delivery llega a su destino por eventos, sin intervención manual. *Explicar:* qué parte de la cadena dejó de depender de una persona.
-17. **D2. Separación de funciones.** A producción solo se llega por el pipeline (GitHub Actions con OIDC y CloudFormation); un `kubectl apply` manual desde una laptop se rechaza. *Explicar:* por qué un regulador exige este control.
-18. **D3. Disponibilidad demostrable (SLO).** Definen un objetivo de servicio (por ejemplo, 99,5 % y p95 menor a 500 ms) y lo miden en un tablero de CloudWatch con su presupuesto de errores. *Explicar:* qué hacen cuando se gasta el presupuesto de errores.
-19. **D4. Costos predecibles.** Etiquetas de costo por país y servicio, y un presupuesto de AWS Budgets con alerta. *Explicar:* cuánto cuesta hoy cada país y qué lo encarece.
-20. **D5. Recuperación ante desastres.** Borran el clúster y lo recrean desde cero con CloudFormation, midiendo cuánto tarda (RTO) y comprobando que los datos siguen en RDS. *Explicar:* qué se pierde y qué no cuando cae todo el clúster.
+### Bloque D — Seguridad en cada capa y defensa contra Thanos (3 puntos)
+19. **D1. Bloquear los ataques automatizados.** AWS WAF delante de la tienda, con reglas administradas y límite de solicitudes por IP. *En vivo:* un script que prueba contraseñas contra **su propio** inicio de sesión queda bloqueado y se ve en las métricas del WAF. *Explicar:* qué habría frenado al bot de la madrugada.
+20. **D2. Ningún secreto en el código ni en la imagen.** Las credenciales viven en Secrets Manager y los pods las leen con su propio rol (IRSA); un escáner de secretos en el pipeline frena un commit que trae una API key de prueba. *Explicar:* por qué tres días para detectar la key filtrada es demasiado y cómo lo resolvieron.
+21. **D3. Solo imágenes revisadas.** El pipeline no despliega una imagen con vulnerabilidades críticas, y el clúster rechaza imágenes que no vengan del ECR propio. *En vivo:* una imagen con una vulnerabilidad crítica conocida no llega al clúster. *Explicar:* qué es la cadena de suministro de software y dónde la cortaron.
+22. **D4. Cada capa habla solo con la que necesita.** NetworkPolicies de Kubernetes y security groups: la web no llega directo a la base de datos, solo la capa de negocio. *En vivo:* un intento de conexión desde un pod de la web a la base de datos falla. *Explicar:* qué limita el radio del daño si alguien entra a la web.
+23. **D5. Agentes que no se dejan manipular.** Un intento de inyección de instrucciones contra el agente de soporte o el de operaciones («ignora tus reglas y…») se bloquea y queda en la bitácora. *Explicar:* qué riesgos del OWASP Top 10 para aplicaciones con modelos de lenguaje cubrieron.
+24. **D6. Detectar, avisar y contener.** GuardDuty (con la protección de EKS) y CloudTrail detectan una actividad sospechosa simulada en **su propia** cuenta o clúster; llega la alerta y una respuesta automática aísla el pod o el recurso. *Explicar:* cuánto tardó entre la detección y la contención, y qué habría pasado sin ella.
+25. **D7. Enfrentar a Thanos: plan de defensa contra un agente de IA con descifrado cuántico.** El grupo **plantea cómo lo enfrentaría**, sobre su propia arquitectura y no en abstracto:
+    - **Inventario criptográfico:** dónde usa hoy URPOnline cifrado de clave pública (HTTPS en CloudFront y el ALB, tokens de Cognito, certificados, conexión a RDS, llaves de KMS) y dónde cifrado simétrico (datos en reposo en RDS y S3).
+    - **Qué se rompe y qué resiste:** qué partes caen ante el descifrado cuántico y cuáles no, y **qué datos de URPOnline están expuestos a «cosechar ahora, descifrar después»**.
+    - **Migración post-cuántica:** cómo pasarían a criptografía post-cuántica (por ejemplo, intercambio de claves híbrido con ML-KEM, el estándar FIPS 203), qué servicios de AWS ya lo ofrecen hoy (verificado en la documentación oficial, con la fuente) y qué harían donde todavía no existe.
+    - **Contra el agente atacante:** cómo detectan y frenan a un agente que cambia de táctica (WAF y control de bots, límites de solicitudes, GuardDuty, alertas) y cómo protegen a sus propios agentes de la manipulación.
+    - **Prioridades y costo:** qué harían primero, qué dejarían para después y por qué.
 
-**Requisitos:** video con toda la implementación el día anterior (participan todos, con la cámara encendida). Todo como código (**CloudFormation**; `eksctl` también crea el clúster con CloudFormation). Sin GPU.
+    *En vivo:* presentan el plan con el inventario de **su** cuenta (no uno genérico) y muestran al menos una medida ya aplicada. *Explicar:* por qué AES-256 resiste y RSA no, y qué significa que un dato tenga que seguir secreto diez años.
+
+### Bloque E — Capacidad y costo anticipados con Machine Learning (3 puntos)
+26. **E1. Dataset propio.** Bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan (saturado / no saturado). *Explicar:* por qué su propia telemetría es mejor que un dataset ajeno.
+27. **E2. Modelo en CPU y open source.** Predice la saturación de los próximos minutos; reproducible, con precisión, recall y cobertura de episodios, y mejor que el modelo trivial de persistencia. *Explicar:* por qué precisión y recall, y no solo el acierto.
+28. **E3. Escalado proactivo.** La predicción sube los pods antes de saturar, en vivo con k6, con contador en CloudWatch y alerta por SNS. *Explicar:* escalar por reacción frente a escalar por predicción.
+29. **E4. Qué capa se satura primero.** El modelo dice cuál será el cuello de botella (web, negocio o base de datos). *Explicar:* qué señal de cada capa lo anticipa y si habría avisado el Cyber Day pasado.
+30. **E5. Capacidad y costo de un país nuevo.** Proyectan cuántos pods, qué base de datos y cuánto costo mensual necesita abrir un país más, con etiquetas de costo por país y un presupuesto de AWS Budgets con alerta. *Explicar:* qué supuestos usaron y qué los haría equivocarse.
+31. **E6. Interpretación.** Qué señales anticipan la saturación, con cuánta anticipación y cuánto cuesta una alarma falsa frente a una caída sin aviso. *Explicar:* qué cambiarían en la arquitectura con lo que reveló el modelo.
+
+### Bloque F — La cadena de valor con IA agéntica, gobernada (4 puntos)
+32. **F1. Cadena de valor automatizada.** La importación de proveedores corre sola en el clúster (CronJob); el agente de stock propone la compra, el de carrito recupera la venta y el delivery asigna repartidores, conectados por eventos. *En vivo:* un pedido recorre la cadena sin intervención manual. *Explicar:* qué parte dejó de depender de una persona.
+33. **F2. Agente de operaciones: planificar y ejecutar.** Arma el plan completo de un despliegue o de un escalado antes de ejecutarlo, comparado con ReAct sobre el mismo caso. *Explicar:* cuándo conviene planificar antes y cuándo ReAct.
+34. **F3. Orquestador con subagentes.** Ante una caída provocada en vivo (bloque B), un supervisor reparte entre los subagentes de métricas, de Kubernetes y de predicción hasta llegar a la causa. *Explicar:* cómo reparte y qué pasa si un subagente falla.
+35. **F4. Memoria de incidentes.** Un segundo incidente parecido se resuelve con la memoria del primero. *Explicar:* qué guarda la memoria y qué no.
+36. **F5. Solo lectura y aprobación humana.** El subagente de Kubernetes tiene RBAC e IAM de solo lectura (su intento de borrar un pod se rechaza), y toda acción que cambia producción espera la aprobación de una persona. *Explicar:* por qué un agente no debe cambiar la producción por su cuenta.
+37. **F6. Bitácora auditable de los agentes.** Cada decisión de un agente queda registrada con qué hizo, con qué datos, por qué, quién aprobó y cuánto tardó (MTTR en los incidentes). *Explicar:* qué le muestra esa bitácora a un auditor antes de salir a bolsa.
+
+---
+
+## 🧭 Instrucciones: cómo trabajar la fase 3
+
+1. **Partan de su repositorio de la fase 2.** La fase 3 se construye encima: la tienda, los agentes, los pagos y el delivery siguen funcionando. Traigan la rama `fase-3` del curso: `git pull curso fase-3` y luego `git push`.
+2. **Antes de crear nada que cobre**, revisen las cuotas de su cuenta. Las cuentas nuevas tienen solo **10 ejecuciones simultáneas de Lambda** y las del **plan gratuito no permiten RDS Proxy**. Comprueben también si su cuenta permite réplicas de lectura de RDS, Multi-AZ, WAF y GuardDuty; si alguna no está disponible, **lo documentan** y explican qué harían con una cuenta de pago.
+3. **Orden sugerido:** bloque A (contenedores) → B (balanceo y caídas) → C (monitoreo) → D (seguridad) → E (Machine Learning, que necesita los datos de carga de B y C) → F (agentes, que usan las caídas de B como incidentes).
+4. **Todo como código:** CloudFormation, `eksctl` (que también usa CloudFormation), manifiestos de Kubernetes en `k8s/` y el pipeline de GitHub Actions. Lo hecho a mano en la consola no cuenta.
+5. **Las fallas y los ataques se provocan solo contra su propia infraestructura.** Nunca contra la de otro grupo ni contra terceros.
+6. **Cuiden el costo:** EKS cobra cerca de 0,10 USD por hora aunque no tenga carga, y las réplicas y el NAT también. Créenlo, pruébenlo y **bórrenlo** (paso 10 de la guía); recréenlo para el video y la presentación.
+7. **Guión de la presentación (en vivo):** tráfico de k6 → caída de un nodo de cada capa vista en el tablero → recuperación automática → ataque bloqueado → plan contra Thanos → predicción del modelo → un incidente resuelto por el agente de operaciones con su bitácora.
+
+---
+
+## 📚 Teoría para la fase 3
+
+**Balanceo de carga en tres capas.** En la **web**, el ALB reparte las solicitudes HTTP entre los pods según su chequeo de salud: un pod que no responde deja de recibir tráfico. En la **capa de negocio**, un *Service* de Kubernetes reparte las llamadas entre las réplicas de un servicio interno, sin pasar por Internet. En la **base de datos**, las **lecturas** se pueden repartir entre el primario y sus **réplicas de lectura**, pero las **escrituras** van siempre al primario, porque solo puede haber una versión verdadera de cada pedido. La réplica recibe los cambios con un pequeño **retraso de réplica**: lo que se acaba de escribir puede tardar en verse ahí.
+
+**Alta disponibilidad y autorrecuperación.** Una **zona de disponibilidad** es un centro de datos independiente dentro de una región; repartir los nodos en dos zonas evita que un corte de luz o de red se lleve todo. La **autorrecuperación** es que el sistema detecte la caída y cree el reemplazo solo: en Kubernetes lo hace el *ReplicaSet* (mantiene el número de pods pedido); en EC2, el *Auto Scaling group*; en RDS **Multi-AZ**, un **failover** que pasa el primario a la réplica en espera de la otra zona. Lo que importa medir es el **tiempo de recuperación** (RTO) y **cuántos datos se pueden perder** (RPO).
+
+**SLO y presupuesto de errores.** Un **SLO** es un objetivo de servicio medible, por ejemplo «99,5 % de las solicitudes responden bien y en menos de 500 ms». El 0,5 % restante es el **presupuesto de errores**: lo que el equipo «puede gastar» en un mes entre caídas y despliegues. Si se gasta, se frenan los cambios riesgosos hasta recuperarlo.
+
+**Seguridad por capas (defensa en profundidad).** Ninguna medida sola alcanza: el **WAF** frena ataques en la entrada, el **mínimo privilegio** (IAM, RBAC, IRSA) limita lo que cada pieza puede hacer, las **NetworkPolicies** limitan con quién habla cada capa, el **escaneo de imágenes** corta la cadena de suministro y **GuardDuty** detecta lo que pasó las otras barreras. El objetivo es reducir el **radio del daño**: que entrar a una capa no signifique entrar a todas.
+
+**Seguridad de los agentes de IA.** Un agente lee texto que escriben otros (clientes, correos, páginas). La **inyección de instrucciones** (*prompt injection*) esconde órdenes en ese texto para que el agente haga lo que no debe. Se mitiga con **guardrails** de entrada y salida, separando instrucciones de datos, dando al agente **solo los permisos que necesita** y pidiendo **aprobación humana** para lo de alto impacto. Es el primer riesgo del **OWASP Top 10 para aplicaciones con modelos de lenguaje**.
+
+**Criptografía y computación cuántica.** El cifrado de **clave pública** (RSA, curvas elípticas) se basa en problemas matemáticos que una computadora cuántica suficientemente grande podría resolver con el **algoritmo de Shor**: por eso cae el intercambio de claves de TLS y las firmas digitales. El cifrado **simétrico** (AES) y los resúmenes (SHA) solo pierden parte de su fuerza ante el **algoritmo de Grover**: AES-256 sigue siendo seguro. La respuesta es la **criptografía post-cuántica**, con nuevos estándares de NIST como **ML-KEM** (FIPS 203, para intercambiar claves) y **ML-DSA** (FIPS 204, para firmar). Mientras se migra, se usan esquemas **híbridos** (clásico + post-cuántico) y **cripto-agilidad**: poder cambiar de algoritmo sin rehacer el sistema. Lo urgente son los datos que deben seguir secretos muchos años, por el riesgo de **«cosechar ahora, descifrar después»**.
+
+**IA agéntica.** Un **agente** percibe (lee datos y eventos), decide (con un modelo de lenguaje y reglas) y actúa (llama herramientas). **ReAct** alterna pensar y actuar paso a paso; **planificar y ejecutar** arma el plan completo antes de actuar; un **orquestador** reparte el trabajo entre **subagentes** especializados; la **memoria** guarda lo aprendido para el siguiente caso. Un agente en producción necesita **condición de parada**, **permisos mínimos**, **aprobación humana** para lo que es de alto impacto y una **bitácora** de cada decisión.
 
 ---
 
