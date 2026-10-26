@@ -21,4 +21,29 @@ public class BusinessMetrics(IAmazonCloudWatch cloudWatch, IConfiguration config
    log.LogWarning(ex, "No se pudo publicar la métrica del pedido en CloudWatch");
   }
  }
+
+ // Fase 2 — contadores PROPIOS con el AWS SDK (PutMetricData). El grupo agrega los suyos (paso 11).
+ // CartItemsAdded: cada "Agregar al carrito".
+ public Task CartItemAddedAsync(CancellationToken ct = default) =>
+  PublishAsync("CartItemsAdded", 1, StandardUnit.Count, ct);
+
+ // ActiveCarts: personas distintas con carrito en los ultimos 5 min (cuenta personas, no clics).
+ public Task ActiveCartsAsync(int personas, CancellationToken ct = default) =>
+  PublishAsync("ActiveCarts", personas, StandardUnit.Count, ct);
+
+ // Contador generico de los agentes: CorreosEnviados, HipotesisProbadas, AlertasEmitidas, DoSDetectado...
+ public Task AgentMetricAsync(string nombre, double valor = 1, CancellationToken ct = default) =>
+  PublishAsync(nombre, valor, StandardUnit.Count, ct);
+
+ private async Task PublishAsync(string nombre, double valor, StandardUnit unidad, CancellationToken ct) {
+  if (!config.GetValue("Metrics:CloudWatchEnabled", false)) return;
+  try {
+   await cloudWatch.PutMetricDataAsync(new PutMetricDataRequest {
+    Namespace = "URPOnline",
+    MetricData = new List<MetricDatum> { new() { MetricName = nombre, Value = valor, Unit = unidad } }
+   }, ct);
+  } catch (Exception ex) when (ex is not OperationCanceledException) {
+   log.LogWarning(ex, "No se pudo publicar la métrica {Metric} en CloudWatch", nombre);
+  }
+ }
 }

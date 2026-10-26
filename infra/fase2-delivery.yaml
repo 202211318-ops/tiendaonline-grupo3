@@ -1,0 +1,730 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Fase 2 - URPOnline Delivery (base del curso, solo el camino feliz). Aditivo a la pila base (urponline-oneclick)
+  y a la capa de agentes (fase2-agentes): Cognito, API Gateway REST generada desde el contrato OpenAPI
+  (contratos/delivery-v1.openapi.yaml), API Gateway WebSocket, colas SQS (estandar, con retraso y FIFO) con DLQ,
+  Lambdas .NET 8, RDS Proxy, Amazon Location Service, EventBridge y alarmas.
+  Se despliega con --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND (AWS::Include del contrato).
+
+Parameters:
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subredes privadas de la app (Output AppSubnets de la pila base) para las Lambdas y el RDS Proxy.
+  AppSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: SG de la aplicacion (Output AppSecurityGroup de la pila base); ya llega a RDS por 5432.
+  DbSecretArn:
+    Type: String
+    Description: ARN del secreto de RDS (Output DbSecretArn de la pila base). Tiene username y password.
+  DbHost:
+    Type: String
+    Description: Endpoint de RDS (Output RDSEndpoint de la pila base). Las Lambdas se conectan aqui si no hay RDS Proxy.
+  UsarRdsProxy:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      RDS Proxy reparte pocas conexiones reales entre muchas Lambdas. NO esta disponible en las cuentas del plan
+      gratuito de AWS («This feature isn't available with free plan accounts»): por eso viene apagado.
+  DbInstanceId:
+    Type: String
+    Description: Identificador de la instancia RDS (aws rds describe-db-instances --query 'DBInstances[0].DBInstanceIdentifier').
+  TiendaUrl:
+    Type: String
+    # Se usa dentro del contrato (AWS::Include): cfn-lint no lo ve y avisa W2001.
+    Description: URL de la tienda (Output ApplicationHTTP de la pila base); atiende la busqueda, las cartas y el soporte.
+  ContratoS3Uri:
+    Type: String
+    Description: s3://bucket/contratos/delivery-v1.openapi.yaml (el workflow lo sube antes de desplegar).
+  RedisHost:
+    Type: String
+    Description: Endpoint de ElastiCache Redis (Output RedisPrimary de la pila base); guarda la ultima posicion y el GEO de repartidores.
+  EventBusName:
+    Type: String
+    Description: Bus de EventBridge de la tienda (Output BusName de la pila fase2-agentes).
+  LambdaCodeBucket:
+    Type: String
+    Description: Bucket S3 con el ZIP de las Lambdas del delivery (.NET 8).
+  LambdaCodeKey:
+    Type: String
+    Default: delivery/delivery.zip
+  AlertEmail:
+    Type: String
+    Description: Correo que recibe las alarmas del delivery (DLQ con mensajes).
+
+Conditions:
+  ConProxy: !Equals [!Ref UsarRdsProxy, 'true']
+
+Resources:
+
+  # ---------- Cognito: quien es cada usuario y a que grupo pertenece ----------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'urponline-delivery-${AWS::StackName}'
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Policies:
+        PasswordPolicy: { MinimumLength: 8, RequireNumbers: true, RequireLowercase: true, RequireUppercase: true }
+
+  GrupoRepartidor:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: { UserPoolId: !Ref UserPool, GroupName: repartidor, Description: Repartidores en moto }
+
+  GrupoCliente:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: { UserPoolId: !Ref UserPool, GroupName: cliente, Description: Clientes que piden comida }
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: urponline-delivery-apps
+      GenerateSecret: false              # apps publicas (React Native): sin secreto
+      # Las apps usan SRP (la contrasena no viaja). USER_PASSWORD_AUTH solo para sacar un token con la CLI y probar con curl.
+      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH, ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+
+  # ---------- SQS: cada cola con su DLQ ----------
+  PedidosRecibidosDLQ:
+    Type: AWS::SQS::Queue
+    Properties: { QueueName: !Sub 'delivery-pedidos-recibidos-dlq-${AWS::StackName}', MessageRetentionPeriod: 1209600 }
+  PedidosRecibidosQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'delivery-pedidos-recibidos-${AWS::StackName}'
+      VisibilityTimeout: 180             # 6 veces el Timeout de la Lambda que la consume
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt PedidosRecibidosDLQ.Arn, maxReceiveCount: 3 }
+
+  PedidosReofrecerDLQ:
+    Type: AWS::SQS::Queue
+    Properties: { QueueName: !Sub 'delivery-pedidos-reofrecer-dlq-${AWS::StackName}', MessageRetentionPeriod: 1209600 }
+  PedidosReofrecerQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'delivery-pedidos-reofrecer-${AWS::StackName}'
+      VisibilityTimeout: 180             # el retraso lo pone cada mensaje (DelaySeconds)
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt PedidosReofrecerDLQ.Arn, maxReceiveCount: 3 }
+
+  CambiosEntregaDLQ:
+    Type: AWS::SQS::Queue
+    Properties: { QueueName: !Sub 'delivery-cambios-entrega-dlq-${AWS::StackName}.fifo', FifoQueue: true, MessageRetentionPeriod: 1209600 }
+  CambiosEntregaQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'delivery-cambios-entrega-${AWS::StackName}.fifo'
+      FifoQueue: true                    # orden por pedido (MessageGroupId = pedidoId)
+      VisibilityTimeout: 180
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt CambiosEntregaDLQ.Arn, maxReceiveCount: 3 }
+
+  PosicionesDLQ:
+    Type: AWS::SQS::Queue
+    Properties: { QueueName: !Sub 'delivery-posiciones-dlq-${AWS::StackName}.fifo', FifoQueue: true, MessageRetentionPeriod: 86400 }
+  PosicionesQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'delivery-posiciones-${AWS::StackName}.fifo'
+      FifoQueue: true                    # orden por repartidor (MessageGroupId = sub de Cognito)
+      VisibilityTimeout: 180
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt PosicionesDLQ.Arn, maxReceiveCount: 3 }
+
+  # API Gateway escribe las posiciones directo en la cola FIFO (sin Lambda en la entrada).
+  ApiSqsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: apigateway.amazonaws.com }, Action: 'sts:AssumeRole' }]
+      Policies:
+        - PolicyName: enviar-posiciones
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement: [{ Effect: Allow, Action: 'sqs:SendMessage', Resource: !GetAtt PosicionesQueue.Arn }]
+
+  # ---------- RDS Proxy: las Lambdas se conectan solo por aqui ----------
+  # Comparte el SG de la app: la regla de abajo deja que el SG hable consigo mismo por 5432 (Lambda -> proxy).
+  AppIngresoProxy:
+    Condition: ConProxy
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: { GroupId: !Ref AppSecurityGroupId, IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref AppSecurityGroupId, Description: Lambdas del delivery hacia el RDS Proxy }
+  AppEgresoProxy:
+    Condition: ConProxy
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: { GroupId: !Ref AppSecurityGroupId, IpProtocol: tcp, FromPort: 5432, ToPort: 5432, DestinationSecurityGroupId: !Ref AppSecurityGroupId, Description: Lambdas del delivery hacia el RDS Proxy }
+
+  ProxyRole:
+    Condition: ConProxy
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: rds.amazonaws.com }, Action: 'sts:AssumeRole' }]
+      Policies:
+        - PolicyName: leer-secreto-db
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement: [{ Effect: Allow, Action: 'secretsmanager:GetSecretValue', Resource: !Ref DbSecretArn }]
+
+  DbProxy:
+    Condition: ConProxy
+    Type: AWS::RDS::DBProxy
+    Properties:
+      DBProxyName: !Sub 'urponline-delivery-${AWS::StackName}'
+      EngineFamily: POSTGRESQL
+      RoleArn: !GetAtt ProxyRole.Arn
+      Auth: [{ AuthScheme: SECRETS, SecretArn: !Ref DbSecretArn, IAMAuth: DISABLED }]
+      RequireTLS: true
+      VpcSubnetIds: !Ref PrivateSubnetIds
+      VpcSecurityGroupIds: [!Ref AppSecurityGroupId]
+
+  DbProxyTargets:
+    Condition: ConProxy
+    Type: AWS::RDS::DBProxyTargetGroup
+    Properties:
+      DBProxyName: !Ref DbProxy
+      TargetGroupName: default
+      DBInstanceIdentifiers: [!Ref DbInstanceId]
+
+  # ---------- Logs y alertas ----------
+  DeliveryLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub '/urponline/delivery/${AWS::StackName}', RetentionInDays: 7 }
+
+  AlertasTopic:
+    Type: AWS::SNS::Topic
+    Properties: { TopicName: !Sub 'urponline-delivery-alertas-${AWS::StackName}' }
+  AlertasSub:
+    Type: AWS::SNS::Subscription
+    Properties: { TopicArn: !Ref AlertasTopic, Protocol: email, Endpoint: !Ref AlertEmail }
+
+  # ---------- Rol de las Lambdas: MINIMO PRIVILEGIO ----------
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{ Effect: Allow, Principal: { Service: lambda.amazonaws.com }, Action: 'sts:AssumeRole' }]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: delivery-minimo
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['sqs:SendMessage', 'sqs:ReceiveMessage', 'sqs:DeleteMessage', 'sqs:GetQueueAttributes']
+                Resource:
+                  - !GetAtt PedidosRecibidosQueue.Arn
+                  - !GetAtt PedidosReofrecerQueue.Arn
+                  - !GetAtt CambiosEntregaQueue.Arn
+                  - !GetAtt PosicionesQueue.Arn
+              - Effect: Allow
+                Action: ['secretsmanager:GetSecretValue']
+                Resource: !Ref DbSecretArn
+              - Effect: Allow
+                Action: ['events:PutEvents']
+                Resource: !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${EventBusName}'
+              - Effect: Allow
+                Action: ['execute-api:ManageConnections']
+                Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WsApi}/*'
+              - Effect: Allow
+                Action: ['cloudwatch:PutMetricData']
+                Resource: '*'
+                Condition: { StringEquals: { 'cloudwatch:namespace': 'URPOnline/Delivery' } }
+
+  # ---------- Lambdas (un solo ZIP, un punto de entrada por funcion) ----------
+  RecibirPedidoFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-recibir-pedido-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::RecibirPedido
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 15
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  ConsultasFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-consultas-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::Consultas
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 15
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  AceptarPedidoFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-aceptar-pedido-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::AceptarPedido
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 15
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  SincronizarFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-sincronizar-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::Sincronizar
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 15
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  OfrecerPedidoFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-ofrecer-pedido-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::OfrecerPedido
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  ReofrecerPedidoFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-reofrecer-pedido-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::ReofrecerPedido
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  ActualizarEntregaFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-actualizar-entrega-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::ActualizarEntrega
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  RegistrarPosicionFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-registrar-posicion-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::RegistrarPosicion
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  ConexionWsFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-conexion-ws-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::ConexionWs
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 15
+      MemorySize: 512
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  SimuladorFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'delivery-simulador-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::Simulador
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 900                       # una corrida del simulador dura minutos
+      MemorySize: 1024
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey }
+      VpcConfig: { SecurityGroupIds: [!Ref AppSecurityGroupId], SubnetIds: !Ref PrivateSubnetIds }
+      TracingConfig: { Mode: Active }
+      LoggingConfig: { LogGroup: !Ref DeliveryLogs, LogFormat: JSON }
+      Environment:
+        Variables:
+          ConnectionStrings__Postgres: !If
+            - ConProxy
+            - !Sub 'Host=${DbProxy.Endpoint};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+            - !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Colas__PedidosRecibidos: !Ref PedidosRecibidosQueue
+          Colas__PedidosReofrecer: !Ref PedidosReofrecerQueue
+          Colas__CambiosEntrega: !Ref CambiosEntregaQueue
+          Colas__Posiciones: !Ref PosicionesQueue
+          Eventos__Bus: !Ref EventBusName
+          WebSocket__Endpoint: !Sub 'https://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+          Cognito__UserPoolId: !Ref UserPool
+          Cognito__ClientId: !Ref UserPoolClient
+          Redis__Host: !Ref RedisHost
+
+  # SQS -> Lambda, por lotes y con REPORTE DE FALLAS PARCIALES.
+  RecibidosSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties: { EventSourceArn: !GetAtt PedidosRecibidosQueue.Arn, FunctionName: !Ref OfrecerPedidoFn, BatchSize: 10, MaximumBatchingWindowInSeconds: 1, FunctionResponseTypes: [ReportBatchItemFailures] }
+  ReofrecerSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties: { EventSourceArn: !GetAtt PedidosReofrecerQueue.Arn, FunctionName: !Ref ReofrecerPedidoFn, BatchSize: 10, FunctionResponseTypes: [ReportBatchItemFailures] }
+  CambiosSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties: { EventSourceArn: !GetAtt CambiosEntregaQueue.Arn, FunctionName: !Ref ActualizarEntregaFn, BatchSize: 10, FunctionResponseTypes: [ReportBatchItemFailures] }
+  PosicionesSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties: { EventSourceArn: !GetAtt PosicionesQueue.Arn, FunctionName: !Ref RegistrarPosicionFn, BatchSize: 10, FunctionResponseTypes: [ReportBatchItemFailures] }
+
+  # ---------- API Gateway REST: generada desde el contrato ----------
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'urponline-delivery-${AWS::StackName}'
+      EndpointConfiguration: { Types: [REGIONAL] }
+      ApiKeySourceType: HEADER
+      Body:
+        'Fn::Transform':
+          Name: AWS::Include
+          Parameters: { Location: !Ref ContratoS3Uri }
+
+  # Si cambia el contrato, cambia el nombre logico de este recurso para publicar una version nueva.
+  RestDeploymentV1:
+    Type: AWS::ApiGateway::Deployment
+    Properties: { RestApiId: !Ref RestApi }
+
+  RestStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref RestApi
+      DeploymentId: !Ref RestDeploymentV1
+      StageName: prod
+      TracingEnabled: true
+      MethodSettings:
+        - { ResourcePath: '/*', HttpMethod: '*', MetricsEnabled: true, ThrottlingRateLimit: 100, ThrottlingBurstLimit: 200 }
+
+  # Base: UN plan y UNA clave compartida. Los cuatro consumidores con su plan y su limite son el desafio C2.
+  PlanBase:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub 'delivery-base-${AWS::StackName}'
+      ApiStages: [{ ApiId: !Ref RestApi, Stage: !Ref RestStage }]
+      Throttle: { RateLimit: 50, BurstLimit: 100 }
+  ClaveBase:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: RestStage
+    Properties: { Name: !Sub 'delivery-base-${AWS::StackName}', Enabled: true }
+  ClaveEnPlan:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties: { KeyId: !Ref ClaveBase, KeyType: API_KEY, UsagePlanId: !Ref PlanBase }
+
+  PermisoApiRecibir:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: 'lambda:InvokeFunction', FunctionName: !Ref RecibirPedidoFn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*' }
+  PermisoApiConsultas:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: 'lambda:InvokeFunction', FunctionName: !Ref ConsultasFn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*' }
+  PermisoApiAceptar:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: 'lambda:InvokeFunction', FunctionName: !Ref AceptarPedidoFn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*' }
+  PermisoApiSincronizar:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: 'lambda:InvokeFunction', FunctionName: !Ref SincronizarFn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*' }
+
+  # ---------- API Gateway WebSocket: la posicion llega al mapa del cliente ----------
+  WsApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub 'urponline-delivery-ws-${AWS::StackName}'
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+
+  WsIntegracion:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WsApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConexionWsFn.Arn}/invocations'
+
+  WsRutaConectar:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref WsApi, RouteKey: '$connect', Target: !Sub 'integrations/${WsIntegracion}' }
+  WsRutaDesconectar:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref WsApi, RouteKey: '$disconnect', Target: !Sub 'integrations/${WsIntegracion}' }
+  WsRutaSeguir:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref WsApi, RouteKey: seguir, Target: !Sub 'integrations/${WsIntegracion}' }
+
+  WsStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties: { ApiId: !Ref WsApi, StageName: prod, AutoDeploy: true }
+
+  PermisoWs:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: 'lambda:InvokeFunction', FunctionName: !Ref ConexionWsFn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WsApi}/*' }
+
+  # ---------- EventBridge: los eventos del delivery quedan registrados ----------
+  EventosLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub '/aws/events/urponline-delivery-${AWS::StackName}', RetentionInDays: 7 }
+
+  EventosLogsPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub 'delivery-eventos-${AWS::StackName}'
+      PolicyDocument: !Sub '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":["events.amazonaws.com","delivery.logs.amazonaws.com"]},"Action":["logs:CreateLogStream","logs:PutLogEvents"],"Resource":"${EventosLogs.Arn}"}]}'
+
+  ReglaEventosDelivery:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref EventBusName
+      Description: Eventos del delivery hacia un grupo de logs (linea de tiempo de cada pedido).
+      EventPattern:
+        source: ['urponline.delivery']
+        detail-type: [PedidoRecibido, PedidoAceptado, PedidoEntregado]
+      Targets:
+        - { Id: eventos-logs, Arn: !GetAtt EventosLogs.Arn }
+
+  # ---------- Amazon Location Service: el mapa de la app cliente y de la torre de control ----------
+  Mapa:
+    Type: AWS::Location::Map
+    Properties:
+      MapName: !Sub 'urponline-delivery-${AWS::StackName}'
+      Configuration: { Style: VectorEsriStreets }
+
+  MapaApiKey:
+    Type: AWS::Location::APIKey
+    Properties:
+      KeyName: !Sub 'urponline-delivery-mapa-${AWS::StackName}'
+      NoExpiry: true
+      Restrictions:
+        AllowActions: ['geo:GetMap*']
+        AllowResources: [!GetAtt Mapa.Arn]
+
+  # ---------- Alarmas: una DLQ con mensajes avisa por correo ----------
+  AlarmaDlqRecibidos:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'delivery-dlq-pedidos-recibidos-${AWS::StackName}'
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{ Name: QueueName, Value: !GetAtt PedidosRecibidosDLQ.QueueName }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertasTopic]
+  AlarmaDlqCambios:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'delivery-dlq-cambios-entrega-${AWS::StackName}'
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{ Name: QueueName, Value: !GetAtt CambiosEntregaDLQ.QueueName }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertasTopic]
+
+Outputs:
+  ApiUrl:
+    Description: URL de la API del delivery (las apps le agregan /v1/...).
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  ApiKeyId:
+    Description: 'Clave base; su valor: aws apigateway get-api-key --api-key <id> --include-value --query value --output text'
+    Value: !Ref ClaveBase
+  WebSocketUrl:
+    Value: !Sub 'wss://${WsApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  ProxyEndpoint:
+    Condition: ConProxy
+    Value: !GetAtt DbProxy.Endpoint
+  MapName:
+    Value: !Ref Mapa
+  MapaApiKeyName:
+    Description: 'Valor de la key: aws location describe-key --key-name <nombre> --query Key --output text'
+    Value: !Ref MapaApiKey
+  SimuladorFunction:
+    Value: !Ref SimuladorFn
+  AlertasTopicArn:
+    Value: !Ref AlertasTopic

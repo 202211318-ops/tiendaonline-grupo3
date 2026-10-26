@@ -8,6 +8,7 @@ public class ShopDbContext(DbContextOptions<ShopDbContext> options) : DbContext(
  public DbSet<Promotion> Promotions => Set<Promotion>();
  public DbSet<BusinessEvent> BusinessEvents => Set<BusinessEvent>();
  public DbSet<SupplierImport> SupplierImports => Set<SupplierImport>();
+ public DbSet<PurchaseProposal> PurchaseProposals => Set<PurchaseProposal>();
  protected override void OnModelCreating(ModelBuilder b) {
   b.Entity<Product>().Property(x=>x.Price).HasPrecision(12,2);
   b.Entity<Order>().Property(x=>x.Total).HasPrecision(12,2);
@@ -17,5 +18,6 @@ public class ShopDbContext(DbContextOptions<ShopDbContext> options) : DbContext(
   b.Entity<Order>().HasMany(x=>x.Items).WithOne(x=>x.Order).HasForeignKey(x=>x.OrderId);
   b.Entity<Promotion>().HasIndex(x=>x.Code).IsUnique();
   b.Entity<BusinessEvent>().HasIndex(x=>new{x.CreatedUtc,x.EventType});
+  b.Entity<PurchaseProposal>().HasIndex(x=>new{x.Estado,x.ProductId});
  }
 }

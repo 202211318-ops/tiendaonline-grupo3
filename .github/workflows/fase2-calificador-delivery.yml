@@ -1,0 +1,37 @@
+# Calificador automatico del delivery (fase 2, FASE2_ESPECIFICACION.md §9.9.6). Ataca las Lambdas del delivery
+# (el mismo codigo que corre en AWS) contra PostgreSQL real: aceptaciones simultaneas (B2), cambios del celular con
+# saltos invalidos (A3) y reintentos duplicados (B3), desde una SEMILLA y repetidos N corridas.
+# Cumple solo si TODAS las corridas cumplen. Sobre la base del curso NO cumple: es lo que construye el grupo.
+# Actions -> "Calificador delivery" -> Run workflow. En la sustentacion el profesor usa una SEMILLA NUEVA.
+name: Calificador delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      semilla:
+        description: 'Semilla (en la sustentacion, una nueva)'
+        required: true
+        default: '2026'
+      corridas:
+        description: 'Numero de corridas'
+        required: true
+        default: '50'
+
+jobs:
+  calificar:
+    runs-on: ubuntu-latest
+    env:
+      CI: 'true'
+      SEMILLA: ${{ inputs.semilla }}
+      CORRIDAS: ${{ inputs.corridas }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Calificar (semilla ${{ inputs.semilla }}, ${{ inputs.corridas }} corridas)
+        run: |
+          set -o pipefail
+          dotnet test tests/TiendaOnline.Tests.csproj -c Release --filter "Categoria=CalificadorDelivery" \
+            --logger "console;verbosity=detailed" | tee calificador.log
+          grep "Calificador delivery:" calificador.log >> "$GITHUB_STEP_SUMMARY"

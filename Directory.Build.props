@@ -1,0 +1,13 @@
+<Project>
+  <!-- Blindaje del pipeline (fase 2): cada proyecto fija la version EXACTA y el hash de cada dependencia en
+       packages.lock.json. El CI restaura en modo bloqueado: si un paquete cambia (otra version u otro contenido),
+       la compilacion FALLA en vez de traer codigo nuevo sin revision. -->
+  <PropertyGroup>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+  <!-- La tienda se publica para Linux (EC2 y contenedores): el lock file incluye ese runtime. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TiendaOnline'">
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+</Project>

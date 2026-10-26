@@ -1,8 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
-  <ItemGroup><Compile Remove="Worker/**/*.cs" /></ItemGroup>
+  <ItemGroup><Compile Remove="Worker/**/*.cs" /><Compile Remove="tests/**" /><Compile Remove="lambdas/**" /><Compile Remove="lambdas-delivery/**" /><Compile Remove="mobile-delivery/**" /><Compile Remove="emulador/**" /><Content Remove="tests/**;lambdas/**;lambdas-delivery/**;mobile-delivery/**;emulador/**" /><None Remove="tests/**;lambdas/**;lambdas-delivery/**;mobile-delivery/**;emulador/**" /></ItemGroup>
   <!-- Modelo de embeddings (no está en git: se descarga con scripts/descargar-modelo.ps1). Se incluye en dotnet publish para EC2. -->
   <ItemGroup><None Include="ml-models/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+  <!-- Catalogo del Motor de IA (se copia al publicar; la key NO va aqui, va en Secrets Manager). -->
+  <ItemGroup>
+    <Content Update="Data\llm\modelos.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Remove="Data\llm\settings.local.json" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="8.0.11" />
     <!-- DataProtection trae System.Security.Cryptography.Xml 8.0.2, con vulnerabilidades altas (CVE-2026-33116 y las de julio de 2026): se fija la version parcheada. -->
@@ -19,5 +24,6 @@
     <PackageReference Include="AWSSDK.S3" Version="3.7.401" />
     <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.400.35" />
     <PackageReference Include="AWSSDK.CloudWatch" Version="3.7.401" />
+    <PackageReference Include="AWSSDK.EventBridge" Version="3.7.401" />
   </ItemGroup>
 </Project>

@@ -1,5 +1,17 @@
 using System.ComponentModel.DataAnnotations;
 namespace TiendaOnline.Models;
+// Fase 2 - Orden de compra que PROPONE el agente de stock y que un humano aprueba o rechaza en /admin/compras.
+public class PurchaseProposal {
+ public int Id {get;set;}
+ public int ProductId {get;set;}
+ [MaxLength(120)] public string ProductName {get;set;}="";
+ public int StockAlProponer {get;set;}
+ [MaxLength(1000)] public string Propuesta {get;set;}="";
+ [MaxLength(4000)] public string Traza {get;set;}="";       // pensamiento/accion/observacion del loop ReAct
+ [MaxLength(20)] public string Estado {get;set;}="PENDIENTE"; // PENDIENTE | APROBADA | RECHAZADA
+ public DateTime CreatedUtc {get;set;}=DateTime.UtcNow;
+ public DateTime? DecididaUtc {get;set;}
+}
 public class Promotion {
  public int Id {get;set;}
  [MaxLength(100)] public string Code {get;set;}="";

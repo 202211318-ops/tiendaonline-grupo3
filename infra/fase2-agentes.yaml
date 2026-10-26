@@ -1,0 +1,426 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Fase 2 - Capa serverless de agentes de URPOnline. Aditivo a la pila base (urponline-oneclick):
+  EventBridge (bus + reglas + scheduler) -> SQS con DLQ -> Lambda (agentes). SES/SNS para
+  correos y alertas. API Gateway para el webhook de pago. Alarmas en CloudWatch.
+  Las API keys de los modelos van en Secrets Manager (no en este YAML).
+
+Parameters:
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subredes privadas de la app (AppA, AppB) para las Lambdas.
+  LambdaSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: SG que puede conectar a RDS (5432/6432) y salir por el NAT.
+  DbSecretArn:
+    Type: String
+    Description: ARN del secreto de RDS (Secrets Manager) que crea la pila base.
+  DbHost:
+    Type: String
+    Description: Endpoint de RDS (Output RDSEndpoint de la pila base).
+  PaymentsSecretName:
+    Type: String
+    Default: urponline/pagos
+    Description: Secreto con {"accessToken","webhookSecret"} de Mercado Pago (modo prueba).
+  EmailFrom:
+    Type: String
+    Description: Remitente de los correos de recuperacion de carrito (identidad VERIFICADA en Amazon SES).
+  LlmSecretName:
+    Type: String
+    Default: urponline/llm
+    Description: Nombre del secreto con las API keys de los modelos (/admin/modelos).
+  LambdaCodeBucket:
+    Type: String
+    Description: Bucket S3 con el ZIP del codigo de los agentes (Lambda .NET 8).
+  LambdaCodeKey:
+    Type: String
+    Default: agentes/agentes.zip
+    Description: Key del ZIP del codigo de los agentes.
+  AlertEmail:
+    Type: String
+    Description: Correo para las alertas del negocio (SNS) y las alarmas.
+
+  ReservaConcurrencia:
+    Type: Number
+    Default: 0
+    Description: >
+      Concurrencia reservada de la Lambda de agentes (0 = sin reserva). Las cuentas nuevas de AWS tienen una cuota de
+      solo 10 ejecuciones simultaneas y AWS exige dejar 10 sin reservar: con esa cuota, reservar hace FALLAR la pila.
+      Pide el aumento de cuota en Service Quotas y luego usa, por ejemplo, 10.
+
+Conditions:
+  HayReserva: !Not [!Equals [!Ref ReservaConcurrencia, 0]]
+
+Resources:
+
+  # ---------- EventBridge: bus propio de la tienda ----------
+  Bus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub 'urponline-${AWS::StackName}'
+
+  # ---------- SQS: cola de los agentes + cola de mensajes fallidos (DLQ) ----------
+  AgentesDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'urponline-agentes-dlq-${AWS::StackName}'
+      MessageRetentionPeriod: 1209600   # 14 dias
+
+  AgentesQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'urponline-agentes-${AWS::StackName}'
+      VisibilityTimeout: 180            # debe ser > duracion de la Lambda
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AgentesDLQ.Arn
+        maxReceiveCount: 5
+
+  # Permite que EventBridge escriba en la cola.
+  QueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref AgentesQueue]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: 'sqs:SendMessage'
+            Resource: !GetAtt AgentesQueue.Arn
+          - Effect: Allow
+            Principal: { Service: apigateway.amazonaws.com }
+            Action: 'sqs:SendMessage'
+            Resource: !GetAtt AgentesQueue.Arn
+
+  # ---------- Reglas: cada evento de la tienda va a la cola ----------
+  ReglaEventosTienda:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref Bus
+      Description: Eventos de negocio de la tienda hacia los agentes.
+      EventPattern:
+        source: ['urponline.tienda']
+        detail-type:
+          - PedidoCreado
+          - CompraCancelada
+          - ProductoAgregadoAlCarrito
+          - ProductoVisto
+      Targets:
+        - Id: agentes-queue
+          Arn: !GetAtt AgentesQueue.Arn
+
+  # ---------- SNS: alertas del negocio (agente analista) ----------
+  AlertasTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub 'urponline-alertas-${AWS::StackName}'
+
+  AlertasSub:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertasTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ---------- Rol de las Lambdas: MINIMO PRIVILEGIO ----------
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess      # trazas de X-Ray
+      Policies:
+        - PolicyName: agentes-minimo
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['sqs:ReceiveMessage','sqs:DeleteMessage','sqs:GetQueueAttributes']
+                Resource: !GetAtt AgentesQueue.Arn
+              - Effect: Allow
+                Action: ['secretsmanager:GetSecretValue']
+                Resource:
+                  - !Ref DbSecretArn
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${LlmSecretName}*'
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${PaymentsSecretName}*'
+              - Effect: Allow
+                Action: ['cloudwatch:PutMetricData']
+                Resource: '*'
+                Condition: { StringEquals: { 'cloudwatch:namespace': 'URPOnline' } }
+              - Effect: Allow
+                Action: ['sns:Publish']
+                Resource: !Ref AlertasTopic
+              - Effect: Allow
+                Action: ['ses:SendEmail']
+                Resource: '*'
+                Condition: { StringEquals: { 'ses:FromAddress': !Ref EmailFrom } }   # solo desde el remitente verificado
+
+  # ---------- Lambda: procesa los eventos (los 4 agentes) ----------
+  AgentesLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'urponline-agentes-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Agentes::URPOnline.Agentes.Handler::Procesar
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 120                      # < VisibilityTimeout de la cola
+      MemorySize: 512
+      # Limita las conexiones a la base en la tormenta. Opcional: con la cuota de una cuenta nueva (10) no se puede reservar.
+      ReservedConcurrentExecutions: !If [HayReserva, !Ref ReservaConcurrencia, !Ref AWS::NoValue]
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaSecurityGroupId]
+        SubnetIds: !Ref PrivateSubnetIds
+      TracingConfig: { Mode: Active }    # X-Ray: cada invocacion y sus llamadas a AWS quedan trazadas
+      Environment:
+        Variables:
+          # Sin contrasena: la app la pide a Secrets Manager (Database__SecretArn), igual que en las EC2.
+          ConnectionStrings__Postgres: !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Llm__SecretId: !Ref LlmSecretName
+          Payments__SecretId: !Ref PaymentsSecretName
+          Alerts__TopicArn: !Ref AlertasTopic
+          Email__From: !Ref EmailFrom
+          # Caida simulada (escenario 2): en "true" la Lambda reporta cada mensaje como fallido -> reintentos -> DLQ.
+          SIMULAR_CAIDA: 'false'
+
+  # Misma imagen de codigo, otro punto de entrada: EventBridge Scheduler -> agentes de stock y analista.
+  AgentesProgramadosLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub 'urponline-agentes-programados-${AWS::StackName}'
+      Runtime: dotnet8
+      Handler: URPOnline.Agentes::URPOnline.Agentes.Handler::Programado
+      Role: !GetAtt LambdaRole.Arn
+      Timeout: 600                      # el agente de stock recorre varios productos
+      MemorySize: 512
+      ReservedConcurrentExecutions: !If [HayReserva, 2, !Ref AWS::NoValue]   # nunca dos corridas del mismo agente en paralelo
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaSecurityGroupId]
+        SubnetIds: !Ref PrivateSubnetIds
+      TracingConfig: { Mode: Active }    # X-Ray: cada invocacion y sus llamadas a AWS quedan trazadas
+      Environment:
+        Variables:
+          # Sin contrasena: la app la pide a Secrets Manager (Database__SecretArn), igual que en las EC2.
+          ConnectionStrings__Postgres: !Sub 'Host=${DbHost};Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true'
+          Database__SecretArn: !Ref DbSecretArn
+          Llm__SecretId: !Ref LlmSecretName
+          Payments__SecretId: !Ref PaymentsSecretName
+          Alerts__TopicArn: !Ref AlertasTopic
+          Email__From: !Ref EmailFrom
+
+  # SQS -> Lambda, por lotes y con REPORTE DE FALLAS PARCIALES.
+  AgentesEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt AgentesQueue.Arn
+      FunctionName: !Ref AgentesLambda
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 5
+      FunctionResponseTypes: [ReportBatchItemFailures]
+
+  # ---------- Scheduler: agentes de stock (noche) y analista (cada 15 min) ----------
+  StockScheduler:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub 'urponline-stock-${AWS::StackName}'
+      ScheduleExpression: 'cron(0 3 * * ? *)'
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      Target:
+        Arn: !GetAtt AgentesProgramadosLambda.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"agente":"stock"}'
+
+  AnalistaScheduler:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub 'urponline-analista-${AWS::StackName}'
+      ScheduleExpression: 'rate(15 minutes)'
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      Target:
+        Arn: !GetAtt AgentesProgramadosLambda.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"agente":"analista"}'
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: invoke-agentes
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'lambda:InvokeFunction'
+                Resource: !GetAtt AgentesProgramadosLambda.Arn
+
+  # ---------- API Gateway (REST): webhook de pago (Mercado Pago -> API GW -> SQS -> Lambda) ----------
+  # REST API y no HTTP API: REST puede pasar a SQS las CABECERAS de la firma (x-signature, x-request-id)
+  # y el data.id de la URL como atributos del mensaje, para que la Lambda verifique el aviso.
+  WebhookApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub 'urponline-webhook-${AWS::StackName}'
+      EndpointConfiguration: { Types: [REGIONAL] }
+
+  WebhookRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: apigateway.amazonaws.com }
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: send-sqs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'sqs:SendMessage'
+                Resource: !GetAtt AgentesQueue.Arn
+
+  PagosResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref WebhookApi
+      ParentId: !GetAtt WebhookApi.RootResourceId
+      PathPart: pagos
+
+  WebhookResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref WebhookApi
+      ParentId: !Ref PagosResource
+      PathPart: webhook
+
+  WebhookMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref WebhookApi
+      ResourceId: !Ref WebhookResource
+      HttpMethod: POST
+      AuthorizationType: NONE            # lo autentica la FIRMA del aviso, que verifica la Lambda
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:sqs:path/${AWS::AccountId}/${AgentesQueue.QueueName}'
+        Credentials: !GetAtt WebhookRole.Arn
+        PassthroughBehavior: NEVER
+        RequestParameters:
+          integration.request.header.Content-Type: "'application/x-www-form-urlencoded'"
+        RequestTemplates:
+          application/json: |
+            #set($sig = $input.params('x-signature'))#if("$!sig" == "")#set($sig = "ninguna")#end
+            #set($rid = $input.params('x-request-id'))#if("$!rid" == "")#set($rid = "ninguno")#end
+            #set($did = $input.params('data.id'))#if("$!did" == "")#set($did = "ninguno")#end
+            #set($cuerpo = $input.body)#if("$!cuerpo" == "")#set($cuerpo = "{}")#end
+            Action=SendMessage&MessageBody=$util.urlEncode($cuerpo)&MessageAttribute.1.Name=origen&MessageAttribute.1.Value.DataType=String&MessageAttribute.1.Value.StringValue=webhook-pago&MessageAttribute.2.Name=xSignature&MessageAttribute.2.Value.DataType=String&MessageAttribute.2.Value.StringValue=$util.urlEncode($sig)&MessageAttribute.3.Name=xRequestId&MessageAttribute.3.Value.DataType=String&MessageAttribute.3.Value.StringValue=$util.urlEncode($rid)&MessageAttribute.4.Name=dataId&MessageAttribute.4.Value.DataType=String&MessageAttribute.4.Value.StringValue=$util.urlEncode($did)
+        IntegrationResponses:
+          - StatusCode: '200'
+            ResponseTemplates: { application/json: '{"recibido":true}' }
+      MethodResponses:
+        - StatusCode: '200'
+
+  # Si cambias el metodo, cambia el nombre logico de este recurso para publicar una version nueva.
+  WebhookDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: WebhookMethod
+    Properties:
+      RestApiId: !Ref WebhookApi
+
+  WebhookStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref WebhookApi
+      DeploymentId: !Ref WebhookDeployment
+      StageName: prod
+      TracingEnabled: true               # X-Ray tambien en la entrada del webhook
+
+  # ---------- Alarmas ----------
+  DLQAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'urponline-dlq-no-vacia-${AWS::StackName}'
+      AlarmDescription: Hay mensajes en la DLQ (algo fallo varias veces).
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt AgentesDLQ.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertasTopic]
+
+  LambdaErroresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'urponline-lambda-errores-${AWS::StackName}'
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AgentesLambda
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertasTopic]
+
+  LambdaProgramadaErroresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'urponline-lambda-programada-errores-${AWS::StackName}'
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AgentesProgramadosLambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertasTopic]
+
+Outputs:
+  BusName:
+    Description: Nombre del bus de EventBridge (configurar en la app como Events__BusName).
+    Value: !Ref Bus
+  QueueUrl:
+    Value: !Ref AgentesQueue
+  DlqUrl:
+    Value: !Ref AgentesDLQ
+  AlertasTopicArn:
+    Value: !Ref AlertasTopic
+  WebhookUrl:
+    Description: URL del webhook de pago (registrar en Mercado Pago de prueba).
+    Value: !Sub 'https://${WebhookApi}.execute-api.${AWS::Region}.amazonaws.com/${WebhookStage}/pagos/webhook'
+  AgentesProgramadosFunction:
+    Description: Lambda de los agentes de stock y analista (para invocarla a mano en una prueba).
+    Value: !Ref AgentesProgramadosLambda

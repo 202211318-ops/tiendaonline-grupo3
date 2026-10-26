@@ -1,0 +1,37 @@
+# Calificador automatico de la fase 2 (categoria 2: arquitectura serverless).
+# Ataca la Lambda de los agentes (el mismo codigo que corre en AWS) con escenarios al azar desde una SEMILLA,
+# repetidos N corridas, con fallas inyectadas: duplicados, cancelaciones en paralelo, mensaje envenenado,
+# correo que falla, avisos de pago validos, falsos, vencidos y rechazados. Cumple solo si TODAS las corridas cumplen.
+# Actions -> "Calificador fase 2" -> Run workflow. En la sustentacion el profesor usa una SEMILLA NUEVA.
+name: Calificador fase 2
+
+on:
+  workflow_dispatch:
+    inputs:
+      semilla:
+        description: 'Semilla (en la sustentacion, una nueva)'
+        required: true
+        default: '2026'
+      corridas:
+        description: 'Numero de corridas'
+        required: true
+        default: '50'
+
+jobs:
+  calificar:
+    runs-on: ubuntu-latest
+    env:
+      CI: 'true'
+      SEMILLA: ${{ inputs.semilla }}
+      CORRIDAS: ${{ inputs.corridas }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Calificar (semilla ${{ inputs.semilla }}, ${{ inputs.corridas }} corridas)
+        run: |
+          set -o pipefail      # si el calificador falla, el paso falla (tee no lo oculta)
+          dotnet test tests/TiendaOnline.Tests.csproj -c Release --filter "FullyQualifiedName~CalificadorFase2" \
+            --logger "console;verbosity=detailed" | tee calificador.log
+          grep "Calificador fase 2:" calificador.log >> "$GITHUB_STEP_SUMMARY"

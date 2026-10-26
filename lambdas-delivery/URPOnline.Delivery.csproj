@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Lambdas de la BASE de URPOnline Delivery (fase 2, FASE2_ESPECIFICACION.md §9.9.2). Un solo ZIP; cada funcion
+       de infra/fase2-delivery.yaml apunta a un metodo de Funciones. Independiente de la tienda: paquete liviano. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>URPOnline.Delivery</AssemblyName>
+    <RootNamespace>URPOnline.Delivery</RootNamespace>
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+    <AWSProjectType>Lambda</AWSProjectType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Amazon.Lambda.Core" Version="2.5.0" />
+    <PackageReference Include="Amazon.Lambda.SQSEvents" Version="2.2.0" />
+    <PackageReference Include="Amazon.Lambda.APIGatewayEvents" Version="2.7.1" />
+    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="2.4.4" />
+    <PackageReference Include="AWSSDK.SQS" Version="3.7.400.35" />
+    <PackageReference Include="AWSSDK.EventBridge" Version="3.7.401" />
+    <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.400.35" />
+    <PackageReference Include="AWSSDK.ApiGatewayManagementApi" Version="3.7.400.35" />
+    <PackageReference Include="Npgsql" Version="8.0.6" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.0.1" />
+  </ItemGroup>
+</Project>

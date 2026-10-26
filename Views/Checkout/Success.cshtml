@@ -1,7 +1,18 @@
+@{ var motivos = (IReadOnlyDictionary<string,string>)ViewBag.Motivos; }
 <div class="panel success">
  <div class="success-icon">✓</div>
  <h1>Pedido registrado, ¡gracias!</h1>
  <p>Tu pedido <b>#@ViewBag.OrderId</b> quedó registrado en PostgreSQL con estado <b>PENDIENTE_PAGO</b>.</p>
  <p class="hint">Esta aplicación es un laboratorio educativo: no procesa pagos reales.</p>
+ @if (TempData["Message"] is string mensaje) { <p class="hint"><b>@mensaje</b></p> }
  <a class="btn-cart inline" asp-controller="Home" asp-action="Index">Seguir comprando</a>
+ <form asp-action="Cancel" method="post" class="cancel-form">
+  <input type="hidden" name="id" value="@ViewBag.OrderId" />
+  <label for="motivo">¿Quieres cancelar el pedido? Cuéntanos por qué:</label>
+  <select id="motivo" name="motivo" required>
+   <option value="">Elige un motivo</option>
+   @foreach (var m in motivos) { <option value="@m.Key">@m.Value</option> }
+  </select>
+  <button type="submit" class="btn-secondary">Cancelar pedido</button>
+ </form>
 </div>

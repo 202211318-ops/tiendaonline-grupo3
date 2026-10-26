@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Amazon.S3;
 using Amazon.SecretsManager;
 using Amazon.CloudWatch;
+using Amazon.EventBridge;
 using TiendaOnline.Data;
 using TiendaOnline.Services;
 var builder=WebApplication.CreateBuilder(args);
@@ -28,6 +29,8 @@ builder.Services.AddSession(o=>{
 });
 builder.Services.AddScoped<CartService>();builder.Services.AddScoped<BusinessEvents>();
 builder.Services.AddScoped<BusinessMetrics>();
+// Eventos de negocio hacia Amazon EventBridge (los consumen los agentes por SQS).
+builder.Services.AddScoped<StoreEventPublisher>();
 // Búsqueda semántica: modelo local ONNX + pgvector en PostgreSQL.
 builder.Services.AddSingleton<EmbeddingService>();
 builder.Services.AddScoped<ProductVectorStore>();
@@ -36,6 +39,29 @@ builder.Services.AddDefaultAWSOptions(builder.Configuration.GetAWSOptions());
 builder.Services.AddAWSService<IAmazonS3>();
 builder.Services.AddAWSService<IAmazonSecretsManager>();
 builder.Services.AddAWSService<IAmazonCloudWatch>();
+builder.Services.AddAWSService<IAmazonEventBridge>();
+// Motor de IA: catalogo de modelos abiertos/gratuitos, keys en Secrets Manager, cliente comun y "Probar conexion".
+builder.Services.AddHttpClient("llm", c => c.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddSingleton<TiendaOnline.Services.Llm.LlmCatalog>();
+builder.Services.AddSingleton<TiendaOnline.Services.Llm.LlmSettingsStore>();
+builder.Services.AddSingleton<TiendaOnline.Services.Llm.LlmProviderFactory>();
+builder.Services.AddSingleton<TiendaOnline.Services.Llm.LlmConnectionTester>();
+// Agentes de IA: guardrails (3 capas), RAG estructural de los SLA y agente de soporte.
+builder.Services.AddSingleton<TiendaOnline.Services.Agents.InputGuard>();
+builder.Services.AddSingleton<TiendaOnline.Services.Agents.OutputGuard>();
+builder.Services.AddScoped<TiendaOnline.Services.Agents.SlaSectionStore>();
+builder.Services.AddScoped<TiendaOnline.Services.Agents.SupportAgent>();
+// Agentes de stock (ReAct), carrito (generador/critico) y analista (hipotesis/verificacion) + sus herramientas.
+builder.Services.AddScoped<TiendaOnline.Services.Agents.IAgentTools, TiendaOnline.Services.Agents.SqlAgentTools>();
+builder.Services.AddScoped<TiendaOnline.Services.Agents.StockAgent>();
+builder.Services.AddScoped<TiendaOnline.Services.Agents.CartAgent>();
+builder.Services.AddScoped<TiendaOnline.Services.Agents.AnalystAgent>();
+builder.Services.AddScoped<TiendaOnline.Services.Agents.IdempotencyStore>();
+builder.Services.AddScoped<TiendaOnline.Services.Agents.SlaSeeder>();
+// Fase 2, URPOnline Delivery: carta, búsqueda de platos, soporte del delivery y sus datos de prueba.
+builder.Services.AddScoped<TiendaOnline.Services.Comida.ComidaStore>();
+builder.Services.AddScoped<TiendaOnline.Services.Comida.SoporteDelivery>();
+builder.Services.AddScoped<TiendaOnline.Services.Comida.ComidaSeeder>();
 var app=builder.Build();
 if(!app.Environment.IsDevelopment()){app.UseExceptionHandler("/Home/Error");app.UseHsts();}
 app.UseForwardedHeaders(new ForwardedHeadersOptions {ForwardedHeaders=ForwardedHeaders.XForwardedFor|ForwardedHeaders.XForwardedProto,KnownNetworks={ },KnownProxies={ }});
@@ -50,6 +76,11 @@ if(app.Configuration.GetValue<bool>("InitializeDatabase")){
  try {
   await database.Database.ExecuteSqlRawAsync("SELECT pg_advisory_lock(727001)");
   await database.Database.MigrateAsync();await SeedData.LoadAsync(database);
+  // Fase 2: tabla de idempotencia y SLA de ejemplo para el RAG del agente de soporte.
+  await scope.ServiceProvider.GetRequiredService<TiendaOnline.Services.Agents.IdempotencyStore>().EnsureSchemaAsync();
+  await TiendaOnline.Services.Agents.CartRecovery.CrearTablaAsync(database);   // control de 1 correo cada 24 h
+  await scope.ServiceProvider.GetRequiredService<TiendaOnline.Services.Agents.SlaSeeder>().SeedAsync();
+  await scope.ServiceProvider.GetRequiredService<TiendaOnline.Services.Comida.ComidaSeeder>().SeedAsync();   // delivery
  } finally {
   await database.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock(727001)");
   await database.Database.CloseConnectionAsync();

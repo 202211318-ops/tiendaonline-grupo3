@@ -25,6 +25,7 @@
 </header>
 <nav class="subnav">
  <a asp-controller="Home" asp-action="Index">☰ Todo</a>
+ <a href="/comida">🍔 Comida</a>
  @foreach(var cat in categories){<a asp-controller="Home" asp-action="Index" asp-route-category="@cat">@cat</a>}
 </nav>
 <main class="main">@if(TempData["Message"] != null) { <div class="notice">@TempData["Message"]</div> } @RenderBody()</main>

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>URPOnline.Agentes.Conectores</AssemblyName>
+    <RootNamespace>URPOnline.Agentes.Conectores</RootNamespace>
+  </PropertyGroup>
+</Project>

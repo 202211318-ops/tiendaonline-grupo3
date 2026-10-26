@@ -1,0 +1,43 @@
+@using TiendaOnline.Services.Comida
+@model List<Plato>
+@{
+ ViewData["Title"] = "Comida";
+ var restaurantes = (List<Restaurante>)ViewBag.Restaurantes;
+ var encontrados = ViewBag.Encontrados as List<PlatoEncontrado>;
+}
+<h1>🍔 Comida</h1>
+<p>Pide desde la app del cliente de URPOnline Delivery y sigue a la moto en el mapa.</p>
+
+<form method="get" action="/comida" class="comida-busqueda">
+ <input name="q" value="@ViewBag.Consulta" maxlength="200" placeholder="Busca un plato: «algo picante con pollo»" aria-label="Buscar plato" />
+ <button type="submit">Buscar</button>
+</form>
+
+@if (encontrados != null)
+{
+ <h2>Resultados para «@ViewBag.Consulta»</h2>
+ @if (encontrados.Count == 0) { <p>Sin resultados (o la búsqueda semántica no está disponible).</p> }
+ <table class="comida-tabla">
+  <tr><th>Plato</th><th>Ingredientes</th><th>Alérgenos</th><th>Precio</th><th>Coseno</th></tr>
+  @foreach (var e in encontrados)
+  {
+   <tr><td>@e.Plato.Nombre</td><td>@string.Join(", ", e.Plato.Ingredientes)</td><td>@string.Join(", ", e.Plato.Alergenos)</td>
+   <td>S/ @e.Plato.Precio.ToString("0.00")</td><td>@e.Coseno.ToString("0.000")</td></tr>
+  }
+ </table>
+}
+
+<h2>Restaurantes</h2>
+<nav class="subnav">
+ @foreach (var r in restaurantes)
+ {
+  <a href="/comida?restaurante=@r.Id" aria-current="@(r.Id == (int?)ViewBag.Elegido ? "page" : null)">@r.Nombre</a>
+ }
+</nav>
+<table class="comida-tabla">
+ <tr><th>Plato</th><th>Descripción</th><th>Alérgenos</th><th>Precio</th></tr>
+ @foreach (var p in Model)
+ {
+  <tr><td>@p.Nombre</td><td>@p.Descripcion</td><td>@string.Join(", ", p.Alergenos)</td><td>S/ @p.Precio.ToString("0.00")</td></tr>
+ }
+</table>

@@ -1,0 +1,366 @@
+openapi: 3.0.3
+info:
+  title: URPOnline Delivery
+  version: 1.0.0
+  description: >
+    Contrato de la API del delivery (fase 2). Es la FUENTE DE VERDAD: API Gateway se genera desde este archivo
+    (infra/fase2-delivery.yaml lo incluye con AWS::Include). Las extensiones x-amazon-apigateway-* dicen a qué
+    Lambda o cola va cada operación; un cliente del contrato las ignora.
+    Base del curso: solo el camino feliz. La validación de solicitudes (C1), los planes por consumidor (C2),
+    la /v2 (C3) y los grupos de Cognito por ruta (C2) los agrega el grupo.
+
+security:
+  - cognito: []
+    api_key: []
+
+paths:
+  /v1/restaurantes:
+    get:
+      operationId: listarRestaurantes
+      summary: Restaurantes aliados
+      responses:
+        '200':
+          description: Lista de restaurantes
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Restaurante' } }
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: GET
+        uri: { 'Fn::Sub': '${TiendaUrl}/api/comida/restaurantes' }
+
+  /v1/restaurantes/{id}/platos:
+    get:
+      operationId: listarPlatos
+      summary: Carta de un restaurante
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Platos del restaurante
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Plato' } }
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: GET
+        uri: { 'Fn::Sub': '${TiendaUrl}/api/comida/restaurantes/{id}/platos' }
+        requestParameters:
+          integration.request.path.id: method.request.path.id
+
+  /v1/platos/buscar:
+    get:
+      operationId: buscarPlatos
+      summary: Búsqueda de platos (la base busca solo por coseno; C5 agrega reescritura y Jaccard)
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200':
+          description: Platos ordenados por puntaje
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/PlatoEncontrado' } }
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: GET
+        uri: { 'Fn::Sub': '${TiendaUrl}/api/comida/buscar' }
+        requestParameters:
+          integration.request.querystring.q: method.request.querystring.q
+
+  /v1/pedidos:
+    post:
+      operationId: crearPedido
+      summary: El cliente hace un pedido
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NuevoPedido' }
+      responses:
+        '202':
+          description: Pedido recibido (entra a la cola pedidos-recibidos)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pedido' }
+        '400': { $ref: '#/components/responses/Problema' }
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: { 'Fn::Sub': 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RecibirPedidoFn.Arn}/invocations' }
+
+  /v1/pedidos/{id}:
+    get:
+      operationId: consultarPedido
+      summary: Estado de un pedido
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: El pedido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pedido' }
+        '404': { $ref: '#/components/responses/Problema' }
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: { 'Fn::Sub': 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConsultasFn.Arn}/invocations' }
+
+  /v1/pedidos/{id}/aceptar:
+    post:
+      operationId: aceptarPedido
+      summary: El repartidor acepta una oferta (síncrono)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: El repartidor quedó asignado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pedido' }
+        '404': { $ref: '#/components/responses/Problema' }
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: { 'Fn::Sub': 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AceptarPedidoFn.Arn}/invocations' }
+
+  /v1/ofertas:
+    get:
+      operationId: listarOfertas
+      summary: Ofertas vigentes para el repartidor que llama
+      responses:
+        '200':
+          description: Ofertas
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Oferta' } }
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: { 'Fn::Sub': 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ConsultasFn.Arn}/invocations' }
+
+  /v1/sincronizar:
+    post:
+      operationId: enviarCambios
+      summary: El celular del repartidor envía sus cambios (recogido, entregado)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoteDeCambios' }
+      responses:
+        '202':
+          description: Cambios recibidos (entran a cambios-entrega.fifo)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Recibido' }
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: { 'Fn::Sub': 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SincronizarFn.Arn}/invocations' }
+    get:
+      operationId: estadoActual
+      summary: Estado actual completo de los pedidos del repartidor (lo incremental es B4)
+      responses:
+        '200':
+          description: Pedidos del repartidor
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Pedido' } }
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: { 'Fn::Sub': 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SincronizarFn.Arn}/invocations' }
+
+  /v1/posiciones:
+    post:
+      operationId: enviarPosicion
+      summary: Posición GPS del repartidor (va directo a posiciones.fifo; el grupo de mensajes es el repartidor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Posicion' }
+      responses:
+        '202':
+          description: Posición encolada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Recibido' }
+      x-amazon-apigateway-integration:
+        type: aws
+        httpMethod: POST
+        uri: { 'Fn::Sub': 'arn:aws:apigateway:${AWS::Region}:sqs:path/${AWS::AccountId}/${PosicionesQueue.QueueName}' }
+        credentials: { 'Fn::GetAtt': [ApiSqsRole, Arn] }
+        passthroughBehavior: never
+        requestParameters:
+          integration.request.header.Content-Type: "'application/x-www-form-urlencoded'"
+        requestTemplates:
+          application/json: >-
+            Action=SendMessage&MessageGroupId=$util.urlEncode($context.authorizer.claims.sub)&MessageDeduplicationId=$context.requestId&MessageBody=$util.urlEncode($input.json('$'))&MessageAttribute.1.Name=repartidor&MessageAttribute.1.Value.DataType=String&MessageAttribute.1.Value.StringValue=$util.urlEncode($context.authorizer.claims.sub)
+        responses:
+          default:
+            statusCode: '202'
+            responseTemplates:
+              application/json: '{"recibido":true}'
+
+  /v1/soporte:
+    post:
+      operationId: escribirAlSoporte
+      summary: Mensaje del cliente al soporte del delivery (lo atiende la tienda; D4 agrega el enrutador)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MensajeSoporte' }
+      responses:
+        '200':
+          description: Respuesta del soporte
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RespuestaSoporte' }
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: POST
+        uri: { 'Fn::Sub': '${TiendaUrl}/api/comida/soporte' }
+
+components:
+  securitySchemes:
+    cognito:
+      type: apiKey
+      name: Authorization
+      in: header
+      x-amazon-apigateway-authtype: cognito_user_pools
+      x-amazon-apigateway-authorizer:
+        type: cognito_user_pools
+        providerARNs:
+          - { 'Fn::GetAtt': [UserPool, Arn] }
+    api_key:
+      type: apiKey
+      name: x-api-key
+      in: header
+
+  responses:
+    Problema:
+      description: Error (RFC 9457)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problema' }
+
+  schemas:
+    Restaurante:
+      type: object
+      required: [id, nombre, lat, lon]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        lat: { type: number }
+        lon: { type: number }
+    Plato:
+      type: object
+      required: [id, restauranteId, nombre, precio, disponible, ingredientes, alergenos]
+      properties:
+        id: { type: integer }
+        restauranteId: { type: integer }
+        nombre: { type: string }
+        descripcion: { type: string }
+        precio: { type: number, format: decimal }
+        disponible: { type: boolean }
+        ingredientes: { type: array, items: { type: string } }
+        alergenos: { type: array, items: { type: string } }
+    PlatoEncontrado:
+      allOf:
+        - $ref: '#/components/schemas/Plato'
+        - type: object
+          required: [coseno]
+          properties:
+            coseno: { type: number }
+    NuevoPedido:
+      type: object
+      required: [restauranteId, items, lat, lon]
+      properties:
+        restauranteId: { type: integer }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [platoId, cantidad]
+            properties:
+              platoId: { type: integer }
+              cantidad: { type: integer, minimum: 1, maximum: 20 }
+        lat: { type: number, description: Punto de entrega }
+        lon: { type: number }
+    Pedido:
+      type: object
+      required: [id, estado, version, total]
+      properties:
+        id: { type: integer }
+        estado:
+          type: string
+          enum: [recibido, ofrecido, aceptado, recogido, entregado, sin_repartidor, cancelado]
+        version: { type: integer }
+        restauranteId: { type: integer }
+        repartidorId: { type: integer, nullable: true }
+        total: { type: number, format: decimal }
+        lat: { type: number }
+        lon: { type: number }
+        actualizadoEn: { type: string, format: date-time }
+    Oferta:
+      type: object
+      required: [pedidoId, intento]
+      properties:
+        pedidoId: { type: integer }
+        intento: { type: integer }
+        restaurante: { type: string }
+        total: { type: number, format: decimal }
+    Cambio:
+      type: object
+      required: [pedidoId, estado]
+      properties:
+        pedidoId: { type: integer }
+        estado: { type: string, enum: [recogido, entregado] }
+        horaDispositivo: { type: string, format: date-time }
+    LoteDeCambios:
+      type: object
+      required: [cambios]
+      properties:
+        cambios:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/Cambio' }
+    Posicion:
+      type: object
+      required: [pedidoId, lat, lon, secuencia, horaDispositivo]
+      properties:
+        pedidoId: { type: integer }
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lon: { type: number, minimum: -180, maximum: 180 }
+        secuencia: { type: integer, minimum: 0 }
+        horaDispositivo: { type: string, format: date-time }
+    MensajeSoporte:
+      type: object
+      required: [pedidoId, texto]
+      properties:
+        pedidoId: { type: integer }
+        texto: { type: string, minLength: 1, maxLength: 1000 }
+    RespuestaSoporte:
+      type: object
+      required: [respuesta]
+      properties:
+        respuesta: { type: string }
+        seccion: { type: string, nullable: true }
+    Recibido:
+      type: object
+      required: [recibido]
+      properties:
+        recibido: { type: boolean }
+    Problema:
+      type: object
+      required: [title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }

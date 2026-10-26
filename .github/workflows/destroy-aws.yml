@@ -29,6 +29,14 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Borrar primero la pila del delivery (fase 2) si existe, porque depende de la base
+        run: |
+          if aws cloudformation describe-stacks --stack-name "$STACK_NAME-delivery" >/dev/null 2>&1; then
+            aws cloudformation delete-stack --stack-name "$STACK_NAME-delivery"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME-delivery"
+            echo "Pila $STACK_NAME-delivery borrada" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Vaciar el bucket de proveedores (tiene versionado)
         run: |
           B=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='S3SupplierBucket'].OutputValue" --output text 2>/dev/null || true)

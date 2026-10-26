@@ -8,6 +8,9 @@ public class Order {
  public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
  public decimal Total { get; set; }
  public string Status { get; set; } = "PENDIENTE_PAGO";
+ // Motivo elegido por el cliente al cancelar (código de CancelReasons) y fecha de la cancelación.
+ [MaxLength(30)] public string? CancelReason { get; set; }
+ public DateTime? CancelledUtc { get; set; }
  public List<OrderItem> Items { get; set; } = new();
 }
 public class OrderItem {

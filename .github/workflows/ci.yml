@@ -1,5 +1,8 @@
-# Integración continua: en cada push y pull request compila la app y valida las plantillas CloudFormation.
-# No usa AWS ni cuesta nada.
+# Integración continua: en cada push y pull request compila, prueba, revisa las dependencias y valida las plantillas.
+# No usa AWS ni cuesta nada. Es también el BLINDAJE DEL PIPELINE (fase 2, dependencia infectada):
+#  - restaura en MODO BLOQUEADO (packages.lock.json): una dependencia que cambia de versión o de contenido rompe la build;
+#  - nuget.config solo permite nuget.org (packageSourceMapping);
+#  - una dependencia con vulnerabilidad conocida FRENA el pipeline (y por lo tanto el despliegue).
 name: CI - compilar y validar
 
 on:
@@ -9,6 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      CI: 'true'          # activa RestoreLockedMode (Directory.Build.props)
     steps:
       - uses: actions/checkout@v4
 
@@ -16,18 +21,38 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restaurar librerías .NET (NuGet)
-        run: dotnet restore TiendaOnline.csproj
+      - name: Restaurar librerías .NET en modo bloqueado (packages.lock.json)
+        run: |
+          for p in TiendaOnline.csproj lambdas/URPOnline.Agentes.csproj tests/TiendaOnline.Tests.csproj Worker/URPOnline.SupplierWorker.csproj; do
+            dotnet restore "$p" --locked-mode
+          done
 
-      - name: Compilar
-        run: dotnet build TiendaOnline.csproj -c Release --no-restore
+      - name: Frenar si alguna dependencia tiene una vulnerabilidad conocida
+        run: |
+          for p in TiendaOnline.csproj lambdas/URPOnline.Agentes.csproj lambdas-delivery/URPOnline.Delivery.csproj Worker/URPOnline.SupplierWorker.csproj; do
+            salida=$(dotnet list "$p" package --vulnerable --include-transitive)
+            echo "$salida"
+            if echo "$salida" | grep -q "has the following vulnerable packages"; then
+              echo "::error::$p tiene dependencias vulnerables: se frena el pipeline"; exit 1
+            fi
+          done
+
+      - name: Compilar (tienda, agentes, worker)
+        run: |
+          dotnet build TiendaOnline.csproj -c Release --no-restore
+          dotnet build lambdas/URPOnline.Agentes.csproj -c Release --no-restore
+          dotnet build lambdas-delivery/URPOnline.Delivery.csproj -c Release --no-restore
+          dotnet build Worker/URPOnline.SupplierWorker.csproj -c Release --no-restore
+
+      - name: Pruebas (agentes, guardrails, webhook de pago, correos, agentes programados; PostgreSQL en Docker)
+        run: dotnet test tests/TiendaOnline.Tests.csproj -c Release --no-restore --filter "Categoria!=CalificadorDelivery"   # el calificador del delivery tiene su propio workflow
+
+      - name: Pruebas de la respuesta automática a intrusión (Python, sin AWS)
+        run: |
+          pip install --quiet boto3 pytest -r ml/requirements.txt
+          python -m pytest -q infra/test_respuesta_intrusion.py ml/test_ml.py
 
       - name: Validar plantillas CloudFormation (cfn-lint)
         run: |
           pip install --quiet cfn-lint
-          cfn-lint --non-zero-exit-code error infra/urponline-oneclick.yaml infra/github-oidc.yaml infra/fase3-contenedores.yaml
-
-      - name: Pruebas del modelo de ML (sin AWS)
-        run: |
-          pip install --quiet -r ml/requirements.txt pytest
-          python -m pytest -q ml/test_ml.py infra/test_respuesta_intrusion.py
+          cfn-lint --non-zero-exit-code error infra/urponline-oneclick.yaml infra/github-oidc.yaml infra/fase2-agentes.yaml infra/fase2-delivery.yaml infra/fase3-contenedores.yaml

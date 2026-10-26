@@ -1,0 +1,118 @@
+# Fase 2 · URPOnline Delivery: compila las Lambdas del delivery, sube el ZIP y el contrato OpenAPI a S3 y crea o
+# actualiza la pila infra/fase2-delivery.yaml. Son los MISMOS comandos de la AWS CLI que puedes ejecutar a mano
+# (README, "Desplegar el delivery").
+#
+# Requisitos (una vez):
+#   - La pila base (URPOnlineLab) desplegada con el código de esta rama (workflow "Desplegar en AWS").
+#   - La pila de agentes (URPOnlineLab-agentes): de ella sale el bus de EventBridge.
+#   - Secreto AWS_ROLE_ARN (salida RoleArn de infra/github-oidc.yaml).
+#   - Variable ALERT_EMAIL: correo que recibe las alarmas de las DLQ.
+#
+# ⚠️ La pila cobra por hora (RDS Proxy, la Lambda en la VPC usa el NAT de la pila base): créala, pruébala y bórrala
+#    con el workflow "Destruir AWS". Se lanza a mano, nunca sola.
+name: Desplegar el delivery (fase 2)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-delivery
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # OIDC: GitHub -> AWS sin Access Keys
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+  STACK: URPOnlineLab
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar secretos y variables
+        env:
+          ROLE: ${{ secrets.AWS_ROLE_ARN }}
+          CORREO: ${{ vars.ALERT_EMAIL }}
+        run: |
+          [ -n "$ROLE" ] || { echo "::error::Falta el secreto AWS_ROLE_ARN (ver README)"; exit 1; }
+          [ -n "$CORREO" ] || { echo "::error::Falta la variable ALERT_EMAIL (Settings → Variables → Actions)"; exit 1; }
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Compilar y empaquetar las Lambdas (solo Linux, para no pasar los 250 MB de Lambda)
+        run: |
+          dotnet publish lambdas-delivery/URPOnline.Delivery.csproj -c Release -r linux-x64 --self-contained false -o out-delivery
+          test -f out-delivery/URPOnline.Delivery.dll
+          (cd out-delivery && zip -qr ../delivery.zip .)
+          ls -lh delivery.zip
+
+      - name: Conectar con AWS (OIDC, sin Access Keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Subir el ZIP y el contrato a S3
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET="urponline-artefactos-${ACCOUNT}-${AWS_REGION}"
+          aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null || { echo "::error::No existe $BUCKET: despliega antes la pila base"; exit 1; }
+          KEY="delivery/delivery-${GITHUB_SHA}.zip"
+          CONTRATO="contratos/delivery-v1-${GITHUB_SHA}.openapi.yaml"
+          aws s3 cp delivery.zip "s3://$BUCKET/$KEY"
+          aws s3 cp contratos/delivery-v1.openapi.yaml "s3://$BUCKET/$CONTRATO"
+          { echo "BUCKET=$BUCKET"; echo "KEY=$KEY"; echo "CONTRATO=s3://$BUCKET/$CONTRATO"; } >> "$GITHUB_ENV"
+
+      - name: Leer las salidas de la pila base y de la de agentes
+        run: |
+          out() { aws cloudformation describe-stacks --stack-name "$1" --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text; }
+          DBHOST=$(out $STACK RDSEndpoint)
+          DBID=$(aws rds describe-db-instances --query "DBInstances[?Endpoint.Address=='$DBHOST'].DBInstanceIdentifier" --output text)
+          [ -n "$DBID" ] || { echo "::error::No se encontró la instancia RDS de $DBHOST"; exit 1; }
+          {
+            echo "SUBNETS=$(out $STACK AppSubnets)"
+            echo "APP_SG=$(out $STACK AppSecurityGroup)"
+            echo "DB_SECRET=$(out $STACK DbSecretArn)"
+            echo "DB_ID=$DBID"
+            echo "DB_HOST=$DBHOST"
+            echo "TIENDA=$(out $STACK ApplicationHTTP)"
+            echo "REDIS=$(out $STACK RedisPrimary)"
+            echo "BUS=$(out $STACK-agentes BusName)"
+          } >> "$GITHUB_ENV"
+
+      - name: Validar la plantilla contra AWS
+        run: aws cloudformation validate-template --template-body file://infra/fase2-delivery.yaml > /dev/null
+
+      - name: Crear o actualizar la pila del delivery
+        env:
+          CORREO: ${{ vars.ALERT_EMAIL }}
+        run: |
+          aws cloudformation deploy \
+            --stack-name "$STACK-delivery" \
+            --template-file infra/fase2-delivery.yaml \
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides PrivateSubnetIds="$SUBNETS" AppSecurityGroupId="$APP_SG" DbSecretArn="$DB_SECRET" \
+              DbHost="$DB_HOST" DbInstanceId="$DB_ID" TiendaUrl="$TIENDA" ContratoS3Uri="$CONTRATO" EventBusName="$BUS" RedisHost="$REDIS" \
+              LambdaCodeBucket="$BUCKET" LambdaCodeKey="$KEY" AlertEmail="$CORREO"
+
+      - name: Probar la carta a través de la tienda y escribir el resumen
+        run: |
+          out() { aws cloudformation describe-stacks --stack-name "$STACK-delivery" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+          curl --fail --retry 10 --retry-delay 10 --retry-all-errors "$TIENDA/api/comida/restaurantes"
+          {
+            echo "## 🛵 Delivery desplegado"
+            echo ""
+            echo "| Output | Valor |"
+            echo "|---|---|"
+            for k in ApiUrl WebSocketUrl UserPoolId UserPoolClientId ApiKeyId MapName SimuladorFunction; do echo "| $k | $(out $k) |"; done
+            echo ""
+            echo "Copia estos valores en \`mobile-delivery/*/src/config.ts\` (ver mobile-delivery/README.md)."
+          } >> "$GITHUB_STEP_SUMMARY"

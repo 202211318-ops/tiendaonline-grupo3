@@ -1,0 +1,84 @@
+@using TiendaOnline.Services.Llm
+@model IReadOnlyList<TiendaOnline.Services.Llm.LlmProviderInfo>
+@{
+    var s = (LlmSettings)ViewBag.Settings;
+    var test = ViewBag.Test as LlmTestResult;
+    var key = (string)ViewBag.Key;
+}
+<h1>Motor de IA — /admin/modelos</h1>
+<p>Un solo motor para los agentes de la tienda. Solo modelos <strong>abiertos y gratuitos</strong>. La clave se guarda en AWS Secrets Manager y no se muestra completa.</p>
+
+<div style="border:2px solid #86efac;background:#f0fdf4;padding:10px;margin:10px 0">
+    <strong>EN USO:</strong> @s.Provider · <code>@s.Model</code>
+    <form method="post" action="/admin/modelos/probar" style="display:inline;margin-left:10px">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="key" value="@key" />
+        <button type="submit">Probar conexión</button>
+    </form>
+    @if (test != null)
+    {
+        <div style="margin-top:8px;padding:8px;border:1px solid @(test.Ok ? "#1a7f37" : "#b42318");background:#fff">
+            <strong style="color:@(test.Ok ? "#1a7f37" : "#b42318")">
+                @(test.Ok ? $"Contestó en {test.Ms} ms" : "No contestó")
+            </strong> <code>@test.Modelo</code>
+            @if (!string.IsNullOrEmpty(test.Respuesta)) { <div>Respondió: «@test.Respuesta»</div> }
+            @if (!string.IsNullOrEmpty(test.Error)) { <div style="color:#b42318">@test.Error</div> }
+            @if (!string.IsNullOrEmpty(test.Pista)) { <div style="color:#555">@test.Pista</div> }
+        </div>
+    }
+</div>
+
+<table class="data" border="1" cellpadding="6" style="border-collapse:collapse;width:100%">
+    <tr><th>Proveedor</th><th>Clave de API</th><th>Modelos</th></tr>
+    @foreach (var p in Model)
+    {
+        var tiene = s.Keys.ContainsKey(p.Clave) && !string.IsNullOrEmpty(s.Keys[p.Clave]);
+        <tr>
+            <td>
+                <strong>@p.Nombre</strong><br />
+                <small>@p.DondeKey</small>
+            </td>
+            <td>
+                @if (tiene) { <span style="color:#1a7f37">✓ </span><code>@LlmSettingsStore.Enmascarar(s.Keys[p.Clave])</code><br /> }
+                else { <span style="color:#b45309">Sin clave</span><br /> }
+                <form method="post" action="/admin/modelos/key">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="key" value="@key" />
+                    <input type="hidden" name="provider" value="@p.Clave" />
+                    <input type="password" name="apiKey" placeholder="pega la clave" autocomplete="off" />
+                    <button type="submit">Guardar</button>
+                </form>
+                @if (p.Clave == "jev")
+                {
+                    <form method="post" action="/admin/modelos/jev-url" style="margin-top:4px">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="key" value="@key" />
+                        <input name="baseUrl" value="@s.JevBaseUrl" placeholder="https://tu-openjev/v1" />
+                        <button type="submit">Guardar base_url</button>
+                    </form>
+                }
+            </td>
+            <td>
+                @foreach (var m in p.Modelos)
+                {
+                    var activo = s.Provider == p.Clave && s.Model == m.Id;
+                    <div style="margin-bottom:3px">
+                        @m.Nombre <small>@(m.Gratis ? "(gratis)" : "")</small>
+                        @if (activo) { <span style="color:#1a7f37">— EN USO</span> }
+                        else
+                        {
+                            <form method="post" action="/admin/modelos/usar" style="display:inline">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="key" value="@key" />
+                                <input type="hidden" name="provider" value="@p.Clave" />
+                                <input type="hidden" name="modelo" value="@m.Id" />
+                                <button type="submit">Usar este</button>
+                            </form>
+                        }
+                    </div>
+                }
+            </td>
+        </tr>
+    }
+</table>
+<p><small>Nombres y base_url salen de <code>Data/llm/modelos.json</code>. Las claves se guardan en AWS Secrets Manager (en desarrollo, en <code>Data/llm/settings.local.json</code>).</small></p>

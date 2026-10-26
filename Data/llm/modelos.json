@@ -1,0 +1,43 @@
+{
+  "nota": "Catalogo de /admin/modelos. Solo modelos ABIERTOS y GRATUITOS, llamados por API compatible con OpenAI. base_url + model + la key del proveedor (en Secrets Manager). Jev es opcional (self-host OpenAI-compatible): el grupo pone su propia base_url.",
+  "proveedores": [
+    {
+      "clave": "google",
+      "nombre": "Google AI (Gemma y Gemini gratis)",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "donde_key": "aistudio.google.com -> Get API Key",
+      "modelos": [
+        { "id": "gemma-2-9b-it", "nombre": "Gemma 2 9B", "gratis": true },
+        { "id": "gemini-2.0-flash", "nombre": "Gemini 2.0 Flash (gratis)", "gratis": true }
+      ]
+    },
+    {
+      "clave": "nvidia",
+      "nombre": "NVIDIA NIM (Nemotron)",
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "donde_key": "build.nvidia.com -> Get API Key",
+      "modelos": [
+        { "id": "nvidia/llama-3.1-nemotron-70b-instruct", "nombre": "Nemotron 70B", "gratis": true },
+        { "id": "meta/llama-3.3-70b-instruct", "nombre": "Llama 3.3 70B (Meta)", "gratis": true }
+      ]
+    },
+    {
+      "clave": "deepseek",
+      "nombre": "DeepSeek",
+      "base_url": "https://api.deepseek.com",
+      "donde_key": "platform.deepseek.com -> API Keys",
+      "modelos": [
+        { "id": "deepseek-chat", "nombre": "DeepSeek V3 Chat", "gratis": false }
+      ]
+    },
+    {
+      "clave": "jev",
+      "nombre": "Jev (experimental, self-host OpenAI-compatible)",
+      "base_url": "",
+      "donde_key": "La base_url la define el grupo (su propio OpenJev). Opcional, para experimentar.",
+      "modelos": [
+        { "id": "openjev", "nombre": "OpenJev (tu endpoint)", "gratis": true }
+      ]
+    }
+  ]
+}
