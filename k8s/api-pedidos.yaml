@@ -7,7 +7,8 @@
 # Usa el ConfigMap urponline-config y el ServiceAccount urponline de k8s/deployment.yaml (aplicalo antes).
 # Reemplaza <ECR_IMAGE> igual que en k8s/deployment.yaml.
 #
-# B5 en vivo:  kubectl -n urponline delete pod -l app=api-pedidos --wait=false | head -1
+# B5 en vivo (borra UNA sola replica; con -l se borrarian todas):
+#   kubectl -n urponline delete $(kubectl -n urponline get pods -l app=api-pedidos -o name | head -1) --wait=false
 #              kubectl -n urponline get pods -l app=api-pedidos -w      (el reemplazo se crea solo)
 ---
 apiVersion: apps/v1

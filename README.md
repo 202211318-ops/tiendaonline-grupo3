@@ -30,7 +30,7 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ## ➡️ [Descargar la rúbrica: `RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx)
 
-### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: sábado 21 de noviembre de 2026** · participan **todos** los integrantes · **todo en vivo**
+### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: sábado 21 de noviembre de 2026** · ⏱️ **40 minutos por grupo** · participan **todos** los integrantes · **todo en vivo**
 
 > 🎯 **Objetivo:** que los alumnos construyan un **portafolio de proyectos con experiencias y casos reales** que les permita usarlo en **entrevistas y evaluaciones de trabajo**.
 
@@ -137,7 +137,7 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 9. **B3. Balanceo en la base de datos.** RDS con una réplica de lectura: el catálogo y la búsqueda leen de la réplica; los pedidos y pagos escriben en el primario. *En vivo:* las conexiones y la CPU muestran la carga repartida. *Explicar:* por qué las escrituras no se reparten igual y qué es el retraso de réplica.
 10. **B4. Se cae un nodo de la web.** Con tráfico en vivo, se elimina un pod (o un nodo) de la tienda. *En vivo:* la tienda sigue respondiendo; se cuentan los errores y su duración. *Explicar:* cómo dejó el ALB de enviarle tráfico.
 11. **B5. Se cae un nodo de la capa de negocio.** Con tráfico en vivo, se elimina una réplica de la API de pedidos. *En vivo:* los pedidos siguen entrando, sin perder ninguno. *Explicar:* qué pasó con las solicitudes que estaban en curso.
-12. **B6. Se cae la base de datos.** Con tráfico en vivo, se fuerza el failover de RDS (o se promueve la réplica). *En vivo:* cuánto tiempo no hubo escrituras y si se perdió algún pedido. *Explicar:* qué hace la aplicación mientras la base cambia de primario, y por qué el Cyber Day pasado no habría caído 47 minutos.
+12. **B6. Se cae la base de datos.** Con tráfico en vivo, **desconectan la base de datos** (una regla de la NACL de datos corta a todos los pods de golpe), fuerzan el failover de RDS si tienen Multi-AZ, o promueven la réplica. *En vivo:* cuánto tiempo no hubo escrituras y si se perdió algún pedido. *Explicar:* qué hace la aplicación mientras la base cambia de primario, y por qué el Cyber Day pasado no habría caído 47 minutos.
 
 ### Bloque C — Monitoreo y autorrecuperación (3 puntos)
 13. **C1. Tablero de salud por capa.** Un tablero de CloudWatch con la web (targets del ALB, 5xx, p95), la capa de negocio (réplicas sanas, errores) y la base de datos (conexiones, CPU, retraso de réplica). *Explicar:* qué métrica de cada capa avisa primero.
@@ -184,6 +184,46 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 38. **F6. Bitácora auditable de los agentes.** Cada decisión de un agente queda registrada con qué hizo, con qué datos, por qué, quién aprobó y cuánto tardó (MTTR en los incidentes). *Explicar:* qué le muestra esa bitácora a un auditor antes de salir a bolsa.
 
 ---
+
+## 🎤 La presentación en vivo: 40 minutos
+
+**Reglas:** k6 genera tráfico **desde el minuto 0 hasta el final** y el tablero de las tres capas (`infra/fase3-seguridad.yaml`) está **siempre en pantalla**. Cada bloque lo presenta un integrante distinto y el profesor pregunta a cualquiera, en cualquier momento. Lo que no se ve funcionando en vivo no cuenta; lo único que se acepta del video es lo que tarda más que la presentación (C6, borrar y recrear el clúster).
+
+| Minuto | Bloque | Qué se ve en vivo |
+|---|---|---|
+| 0 – 3 | Arranque | El caso en una frase, el diagrama de arquitectura, k6 corriendo y el tablero con las tres capas sanas. |
+| 3 – 9 | A | La imagen en ECR sin CRITICAL; los pods en Fargate subiendo con el HPA; una versión con error que vuelve sola a la anterior; Chile saturado sin afectar a Perú; un `kubectl apply` manual rechazado. |
+| 9 – 20 | B y C | Reparto de carga en la web, la API y la base (réplica). Se cae un pod web, luego una réplica de la API y **se desconecta la base de datos**: en cada caída llega la alarma, el tablero muestra la falla y el reemplazo se crea solo. Tiempo de recuperación por capa, el SLO con su presupuesto de errores y la medición de C6 del video. |
+| 20 – 29 | D | El WAF bloquea el script que prueba contraseñas; gitleaks frena un commit con una key; una imagen vulnerable no llega al clúster; la web no llega a la base; el agente no se deja manipular; GuardDuty detecta y la respuesta contiene; el sniffer alerta. El plan contra Thanos en 3 minutos, con el inventario de **su** cuenta. |
+| 29 – 34 | E | El modelo: precisión, recall y anticipación frente a la persistencia; el escalado proactivo que ya ocurrió durante el bloque B; la capa que se satura primero; el costo de abrir un país. |
+| 34 – 38 | F | Un pedido recorre la cadena sin intervención; la caída de la base de datos del bloque B resuelta por el orquestador con sus subagentes y su memoria; el subagente sin permiso para borrar; la bitácora con quién aprobó y el MTTR. |
+| 38 – 40 | Cierre | Cuánto costó la plataforma durante la presentación y qué harían con un mes más. |
+
+> Si algo falla en vivo, **se dice y se explica por qué**: un fallo bien diagnosticado frente al profesor vale más que un video perfecto. Pero el desafío que falla no suma.
+
+## 💸 Advertencias de costo (léanlas ANTES de crear nada)
+
+AWS cobra **por hora encendido**, se use o no. Precios de lista verificados en las páginas de AWS en octubre de 2026 (Ohio, `us-east-2`, salvo donde se indica N. Virginia, `us-east-1`); confírmenlos en la [calculadora de AWS](https://calculator.aws/) antes de empezar.
+
+| Recurso | Cuánto cobra | Cuidado |
+|---|---|---|
+| **Clúster EKS** | 0,10 USD por hora (unos 73 USD al mes) | Solo por existir, sin pods. Una versión de Kubernetes **fuera del soporte estándar** cobra **0,60 USD por hora**: usen una versión vigente. |
+| **Pods en Fargate** | ~0,0405 USD por vCPU-hora y ~0,0044 USD por GB-hora (N. Virginia) | Un pod de 0,25 vCPU y 0,5 GB cuesta ~0,012 USD por hora; 20 pods en una prueba de carga, ~0,25 USD por hora. |
+| **NAT Gateway** | 0,045 USD por hora cada uno + 0,045 USD por GB | La pila tiene **dos** (una por zona): ~66 USD al mes aunque nadie use la tienda. |
+| **RDS db.t3.micro** | ~0,018 USD por hora cada instancia | **Multi-AZ cobra el doble** y **la réplica es otra instancia**. Las T3 corren en modo *Unlimited*: si k6 satura la CPU, cobra **0,075 USD por vCPU-hora** de créditos extra. |
+| **ALB** | por hora más el tráfico procesado | Cada Ingress crea **un ALB**: Perú, Chile y la comparación con EC2 son **tres**. |
+| **IPv4 públicas** | 0,005 USD por hora cada una | Los ALB y los NAT usan varias. |
+| **AWS WAF** | 5 USD al mes por Web ACL + 1 USD al mes por regla o grupo administrado + 0,60 USD por millón de solicitudes (prorrateado por hora) | La ACL de `fase3-seguridad.yaml` (4 reglas) cuesta ~9 USD al mes. |
+| **AWS Network Firewall** (D8) | **0,395 USD por hora por endpoint** + 0,065 USD por GB (N. Virginia) | **El más caro del curso:** con un endpoint en cada zona son ~577 USD al mes. Créenlo solo para la prueba y la presentación, y bórrenlo apenas terminen. |
+| **Traffic Mirroring** (D8) | 0,015 USD por sesión-hora | Más la EC2 del sensor (Suricata o Zeek), que cobra por hora. |
+| **GuardDuty** (D6) | según el volumen analizado | Revisen la prueba gratuita y el costo estimado en la consola de GuardDuty (*Usage*) antes de activar Runtime Monitoring. |
+| **Nodos EC2** (A3) | por hora por instancia | Bórrenlos (`eksctl delete nodegroup`) apenas terminen la comparación. |
+
+**Reglas para no llevarse una sorpresa:**
+1. **Antes de crear nada**, un presupuesto de **AWS Budgets** con alerta por correo (por ejemplo, 20 USD); es parte del desafío E5.
+2. **Al terminar cada sesión, borren todo** (paso 8). Dejar solo el clúster y los dos NAT encendidos **una semana** cuesta ~32 USD (0,19 USD por hora × 168 horas) sin un solo cliente.
+3. Revisen **Billing → Bills** cada día que trabajen; el costo aparece con unas horas de retraso.
+4. Lo que **no** se puede borrar en el momento (el bucket de CloudTrail, los snapshots de RDS) también cobra por almacenamiento: bórrenlo al cerrar el curso.
 
 ## 🗺️ Arquitectura de la fase 3
 
@@ -325,11 +365,29 @@ builder.Services.AddDbContext<ShopReadDbContext>(o => o.UseNpgsql(cfg["Connectio
 
 **B4 · B5 · B6 · Provocar las caídas (solo en su propia cuenta)**
 ```bash
-kubectl -n pe delete pod -l app=urponline --field-selector status.phase=Running --wait=false | head -1   # un pod web
-kubectl -n pe delete pod -l app=api-pedidos | head -1                                                    # una réplica de negocio
-aws rds reboot-db-instance --db-instance-identifier $DB_ID --force-failover                              # failover (requiere Multi-AZ)
-aws rds promote-read-replica --db-instance-identifier $REPLICA_ID                                        # sin Multi-AZ: promover la réplica
-kubectl -n pe get pods -w                                                                                # ver el reemplazo crearse solo
+# B4 · un solo pod web (ojo: "delete pod -l app=urponline" borraría TODOS)
+kubectl -n urponline delete $(kubectl -n urponline get pods -l app=urponline -o name | head -1) --wait=false
+# B5 · una sola réplica de la capa de negocio
+kubectl -n urponline delete $(kubectl -n urponline get pods -l app=api-pedidos -o name | head -1) --wait=false
+kubectl -n urponline get pods -w                                                       # ver el reemplazo crearse solo
+```
+
+**B6 · Desconectar la base de datos en vivo** (lo más simple y se deshace en segundos). La NACL de la subred de datos no guarda estado: una regla `deny` corta **al instante** todas las conexiones de los pods a RDS (primario y réplica), incluso las que ya estaban abiertas en el pool. Solo se bloquean las subredes de aplicación, así que la replicación entre primario y réplica sigue.
+```bash
+NACL=$(out URPOnlineLab DataNaclId)
+date -u +%T   # hora de la caída, para la bitácora y el tablero
+aws ec2 create-network-acl-entry --network-acl-id $NACL --ingress --rule-number 90 --protocol tcp --port-range From=5432,To=5432 --cidr-block 10.0.11.0/24 --rule-action deny
+aws ec2 create-network-acl-entry --network-acl-id $NACL --ingress --rule-number 91 --protocol tcp --port-range From=5432,To=5432 --cidr-block 10.0.12.0/24 --rule-action deny
+# ... miren el tablero: 5xx, conexiones de RDS en 0, alarma por SNS; ¿qué ve el cliente? ¿se pierde el pedido o se reintenta?
+aws ec2 delete-network-acl-entry --network-acl-id $NACL --ingress --rule-number 90   # se reconecta
+aws ec2 delete-network-acl-entry --network-acl-id $NACL --ingress --rule-number 91
+date -u +%T   # hora de la recuperación: la diferencia es su tiempo sin base de datos
+```
+**Otras caídas de la base** (más lentas, más reales):
+```bash
+aws rds reboot-db-instance --db-instance-identifier $DB_ID                     # el motor se reinicia (1-2 min sin base)
+aws rds reboot-db-instance --db-instance-identifier $DB_ID --force-failover    # failover a la otra zona (requiere Multi-AZ)
+aws rds promote-read-replica --db-instance-identifier $REPLICA_ID             # sin Multi-AZ: la réplica pasa a ser primario (NO se deshace: recréenla antes de presentar)
 ```
 
 **C2 · Alarma por capa** (targets no sanos del ALB)
@@ -423,7 +481,7 @@ Todo el código de las fases 1 y 2 (tienda, agentes, delivery, apps móviles) es
 | `k8s/agente-solo-lectura.yaml` | F5 | Cuenta del subagente de Kubernetes con RBAC de solo lectura (`kubectl auth can-i delete pods` responde `no`). |
 | `infra/respuesta_intrusion.py` | D6 | Respuesta automática a intrusión (fase 1) que el grupo extiende al clúster. |
 
-**Orden de despliegue:** pila `URPOnlineLab` (con `EnableReadReplica=true`) → pila `urponline-fase3` (`infra/fase3-contenedores.yaml`) → `eksctl create cluster -f k8s/eksctl-cluster.yaml` → `kubectl apply` de `paises.yaml`, `bluegreen-analisis.yaml`, `deployment.yaml` (sin la línea del WAF), `api-pedidos.yaml`, `proveedores-cronjob.yaml`, `prediccion.yaml` y `agente-solo-lectura.yaml` → pila `urponline-fase3-seguridad` (`infra/fase3-seguridad.yaml`, con el nombre del ALB que creó el Ingress) → volver a aplicar `deployment.yaml` con el `WebAclArn`.
+**Orden de despliegue:** pila `URPOnlineLab` (con `EnableReadReplica=true`) → pila `urponline-fase3` (`infra/fase3-contenedores.yaml`) → `eksctl create cluster -f k8s/eksctl-cluster.yaml` → `kubectl apply` de `paises.yaml`, `bluegreen-analisis.yaml`, `deployment.yaml` (sin la línea del WAF), `api-pedidos.yaml`, `proveedores-cronjob.yaml`, `prediccion.yaml` y `agente-solo-lectura.yaml` → pila `urponline-fase3-seguridad` (`infra/fase3-seguridad.yaml`, con el nombre del ALB que creó el Ingress) → anotar el Ingress con el `WebAclArn` (paso 7).
 
 **Lo que construye el grupo:** A3 (nodos EC2 para comparar), A6 (pipeline con OIDC hasta EKS), B6 (failover medido), C3–C6 (recuperación medida, SLO con presupuesto de errores, recuperación ante desastres), D2–D8 (secretos, imágenes revisadas, aislamiento de red, manipulación de agentes, GuardDuty y contención, plan contra Thanos, sniffer), E4–E6 y F2–F4, F6 (agente de operaciones, orquestador, memoria y bitácora).
 
@@ -436,8 +494,8 @@ Todo el código de las fases 1 y 2 (tienda, agentes, delivery, apps móviles) es
 3. **Orden sugerido:** bloque A (contenedores) → B (balanceo y caídas) → C (monitoreo) → D (seguridad) → E (Machine Learning, que necesita los datos de carga de B y C) → F (agentes, que usan las caídas de B como incidentes).
 4. **Todo como código:** CloudFormation, `eksctl` (que también usa CloudFormation), manifiestos de Kubernetes en `k8s/` y el pipeline de GitHub Actions. Lo hecho a mano en la consola no cuenta.
 5. **Las fallas y los ataques se provocan solo contra su propia infraestructura.** Nunca contra la de otro grupo ni contra terceros.
-6. **Cuiden el costo:** EKS cobra cerca de 0,10 USD por hora aunque no tenga carga, y las réplicas y el NAT también. Créenlo, pruébenlo y **bórrenlo** (paso 10 de la guía); recréenlo para el video y la presentación.
-7. **Guión de la presentación (en vivo):** tráfico de k6 → caída de un nodo de cada capa vista en el tablero → recuperación automática → ataque bloqueado → plan contra Thanos → predicción del modelo → un incidente resuelto por el agente de operaciones con su bitácora.
+6. **Cuiden el costo:** lean **💸 Advertencias de costo** antes de crear nada. Créenlo, pruébenlo y **bórrenlo** (paso 8 de la guía); recréenlo para el video y la presentación.
+7. **Presentación:** 40 minutos, con el guion de **🎤 La presentación en vivo**. Ensáyenla completa con el reloj.
 
 ---
 
@@ -585,10 +643,23 @@ docker rm -f urp-app urp-pg urp-redis && docker network rm urp
 
 ## Paso 4. Desplegar la tienda en EKS
 
+Antes, si quieren la réplica de lectura (B3), actualicen la pila de la tienda con `EnableReadReplica=true` (cobra otra instancia de RDS, ver **💸 Advertencias de costo**) y tomen su endpoint; sin réplica, el catálogo lee del primario:
+
 ```bash
-sed -i "s|<ECR_IMAGE>|$ECR:v1|; s|<RDS_ENDPOINT>|$RDS|; s|<REDIS_ENDPOINT>|$REDIS|; s|<DB_SECRET_ARN>|$SECRET|; s|<PUBLIC_A>|$PUB_A|; s|<PUBLIC_B>|$PUB_B|" k8s/deployment.yaml
+aws cloudformation deploy --stack-name URPOnlineLab --template-file infra/urponline-oneclick.yaml   --capabilities CAPABILITY_IAM --parameter-overrides EnableReadReplica=true   # mismos demás parámetros que ya tiene la pila
+REPLICA=$(out URPOnlineLab RDSReplicaEndpoint); [ -z "$REPLICA" ] && REPLICA=$RDS
+DB_ID=$(out URPOnlineLab RDSInstanceId); REPLICA_ID=$(out URPOnlineLab RDSReplicaId)
+```
+
+```bash
+sed -i "s|<ECR_IMAGE>|$ECR:v1|; s|<RDS_ENDPOINT>|$RDS|; s|<RDS_REPLICA_ENDPOINT>|$REPLICA|; s|<REDIS_ENDPOINT>|$REDIS|; s|<DB_SECRET_ARN>|$SECRET|; s|<PUBLIC_A>|$PUB_A|; s|<PUBLIC_B>|$PUB_B|" k8s/deployment.yaml
+sed -i "s|<ECR_IMAGE>|$ECR:v1|" k8s/api-pedidos.yaml
+sed -i '/wafv2-acl-arn/d' k8s/deployment.yaml      # el WAF se agrega en el paso 7, cuando exista
+kubectl apply -f k8s/paises.yaml                   # namespace de Chile y cuotas por país (A5)
 kubectl apply -f k8s/bluegreen-analisis.yaml      # la prueba automática del blue/green (paso 6)
 kubectl apply -f k8s/deployment.yaml               # ConfigMap + Rollout + Services + Ingress + HPA
+kubectl apply -f k8s/api-pedidos.yaml              # capa de negocio separada (B2)
+kubectl apply -f k8s/agente-solo-lectura.yaml      # cuenta de solo lectura del agente (F5)
 kubectl argo rollouts get rollout urponline -n urponline --watch   # espera "Status: ✔ Healthy" (Ctrl+C)
 ING=$(kubectl -n urponline get ingress urponline -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 curl http://$ING/health                            # {"status":"ok"}  (el ALB tarda 2-3 min)
@@ -679,26 +750,48 @@ kubectl argo rollouts undo urponline -n urponline
 
 Demuéstrenlo **con carga** (k6 contra `http://$ING` mientras publican): durante el cambio y la reversión no debe haber errores.
 
-## Paso 7. Qué presentar
+## Paso 7. WAF, alarmas por capa, tablero y proveedores
 
-1. La imagen en ECR con el escaneo **sin CRITICAL** y el `Dockerfile` multietapa.
-2. La tienda en **EKS/Fargate**: `kubectl get pods,hpa,ingress` y el autoescalado de pods bajo carga.
-3. Fargate vs. EC2 con números, y blue/green volviendo solo a la versión anterior.
-4. El agente de operaciones: el plan antes de ejecutar (frente a ReAct), el orquestador repartiendo un incidente entre sus subagentes y la memoria de un incidente anterior.
-5. El ML: precisión, recall, **cobertura por episodio frente a la persistencia**, anticipación en minutos, y el HPA subiendo **antes** de saturar con la alerta de SNS.
+```bash
+# El ALB y el target group que creó el Ingress
+ALB_ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?DNSName=='$ING'].LoadBalancerArn" --output text)
+ALB_DIM=${ALB_ARN#*:loadbalancer/}
+TG_DIM=$(aws elbv2 describe-target-groups --load-balancer-arn $ALB_ARN --query "TargetGroups[?contains(TargetGroupName,'urponlin')]|[0].TargetGroupArn" --output text | sed 's|.*:||')
+aws cloudformation deploy --stack-name urponline-fase3-seguridad --template-file infra/fase3-seguridad.yaml   --parameter-overrides AlbFullName=$ALB_DIM TargetGroupFullName=$TG_DIM DbInstanceId=$DB_ID DbReplicaId=$REPLICA_ID CorreoAlertas=tu-correo@ejemplo.com
+WAF=$(out urponline-fase3-seguridad WebAclArn)
+# Poner el WAF delante del ALB (vuelve la anotación que se quitó en el paso 4)
+kubectl -n urponline annotate ingress urponline alb.ingress.kubernetes.io/wafv2-acl-arn=$WAF --overwrite
+out urponline-fase3-seguridad TableroURL           # el tablero de las tres capas: déjenlo abierto
+
+# Importador de proveedores (F1) como CronJob
+ECR_WORKER=$(out urponline-fase3 EcrWorkerRepoUri); SUPPLIER=$(out URPOnlineLab S3SupplierBucket)
+docker build -f Worker/Dockerfile -t $ECR_WORKER:v1 . && docker push $ECR_WORKER:v1
+aws s3 cp examples/products.csv s3://$SUPPLIER/suppliers/products.csv
+sed -i "s|<ECR_WORKER_IMAGE>|$ECR_WORKER:v1|; s|<SUPPLIER_BUCKET>|$SUPPLIER|" k8s/proveedores-cronjob.yaml
+kubectl apply -f k8s/proveedores-cronjob.yaml
+kubectl -n urponline create job --from=cronjob/proveedores proveedores-ahora
+kubectl -n urponline logs -f job/proveedores-ahora  # Imported=..., Rejected=...
+```
+
+`TG_DIM` toma el target group de los pods web; revisen con `aws elbv2 describe-target-groups --load-balancer-arn $ALB_ARN` que sea el de `urponline` y no el de `api-pedidos`. El guion de la presentación está en **🎤 La presentación en vivo: 40 minutos**.
 
 ## Paso 8. Borrar todo (¡EKS cobra por hora!)
 
 ```bash
-kubectl delete -f k8s/prediccion.yaml -f k8s/deployment.yaml -f k8s/bluegreen-analisis.yaml   # primero: así el controlador borra el ALB
-kubectl delete namespace urponline-ec2 --ignore-not-found                                       # el segundo ALB (comparación con EC2)
+kubectl delete -f k8s/proveedores-cronjob.yaml -f k8s/prediccion.yaml -f k8s/api-pedidos.yaml -f k8s/deployment.yaml -f k8s/bluegreen-analisis.yaml   # primero: así el controlador borra el ALB
+kubectl delete namespace urponline-ec2 urponline-cl --ignore-not-found                         # los otros ALB (EC2 y Chile)
+aws cloudformation delete-stack --stack-name urponline-fase3-seguridad                         # WAF, alarmas y tablero
+aws ec2 delete-network-acl-entry --network-acl-id $NACL --ingress --rule-number 90 2>/dev/null  # por si quedó la base desconectada (B6)
+aws ec2 delete-network-acl-entry --network-acl-id $NACL --ingress --rule-number 91 2>/dev/null
 aws ec2 revoke-security-group-ingress --group-id $DB_SG    --protocol tcp --port 5432 --source-group $EKS_SG
 aws ec2 revoke-security-group-ingress --group-id $REDIS_SG --protocol tcp --port 6379 --source-group $EKS_SG
 eksctl delete cluster -f k8s/eksctl-cluster.yaml                  # 10-15 min
 aws s3 rm s3://$MODELOS --recursive
 aws ecr delete-repository --repository-name urponline --force
 aws ecr delete-repository --repository-name urponline-ml --force
+aws ecr delete-repository --repository-name urponline-worker --force
 aws cloudformation delete-stack --stack-name urponline-fase3
+# La réplica de RDS se quita actualizando URPOnlineLab con EnableReadReplica=false
 ```
 
 Si quitas los permisos del paso 3.3 **antes** de borrar el clúster, el security group del clúster se puede borrar sin errores. La pila `URPOnlineLab` (la tienda) se borra aparte, como en las fases anteriores.
