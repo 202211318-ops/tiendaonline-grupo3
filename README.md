@@ -1,6 +1,6 @@
 # URPOnline — Laboratorio AWS (TiendaOnline .NET)
 
-> **Fase 3:** 28 de noviembre
+> **Fase 3:** 21 de noviembre
 
 ---
 
@@ -28,7 +28,7 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 # 📋 FASE 3 — IA, APPS MÓVILES Y CONTENEDORES · RÚBRICA (20 PUNTOS)
 
-### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: 28 de noviembre de 2026** · participan **todos** los integrantes
+### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: 21 de noviembre de 2026** · participan **todos** los integrantes
 
 **4 categorías de 5 puntos, todo o nada** (notas 0, 5, 10, 15, 20). Sin GPU. Todo como código (**CloudFormation**; `eksctl` también crea el clúster con CloudFormation). App móvil: **React Native**. Autenticación: **Amazon Cognito + integración propia del grupo**.
 

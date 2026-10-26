@@ -1,6 +1,6 @@
 # Fase 3 — Docker, Kubernetes y escalado con Machine Learning (especificación)
 
-> Rama `fase-3`. Presentación: 28 de noviembre de 2026. La guía paso a paso para los alumnos está en el `README.md`.
+> Rama `fase-3`. Presentación: 21 de noviembre de 2026. La guía paso a paso para los alumnos está en el `README.md`.
 
 ## 1. Alcance
 
