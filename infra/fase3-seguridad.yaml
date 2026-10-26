@@ -190,19 +190,22 @@ Resources:
       AlarmActions: [!Ref AlarmasTopic]
 
   # B3/B6: la replica se atrasa (el catalogo muestra datos viejos) o deja de replicar.
+  # Medido en la cuenta del curso (2026-10-26): con la base SIN escrituras, ReplicaLag sube hasta ~300 s y
+  # vuelve a bajar, aunque la replica este al dia. Un umbral de 30 s daria falsas alarmas todo el tiempo;
+  # por eso se avisa por encima de 360 s sostenidos. Bajo carga con escrituras, el retraso real es mucho menor.
   AlarmaRetrasoReplica:
     Type: AWS::CloudWatch::Alarm
     Condition: HayReplica
     Properties:
       AlarmName: urponline-db-retraso-replica
-      AlarmDescription: La replica de lectura va mas de 30 segundos atrasada respecto al primario.
+      AlarmDescription: La replica de lectura va mas de 6 minutos atrasada respecto al primario (sin escrituras ReplicaLag llega a ~300 s por si solo).
       Namespace: AWS/RDS
       MetricName: ReplicaLag
       Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref DbReplicaId }]
       Statistic: Maximum
       Period: 60
-      EvaluationPeriods: 2
-      Threshold: 30
+      EvaluationPeriods: 3
+      Threshold: 360
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: breaching       # sin dato = la replica no reporta: tambien es problema
       AlarmActions: [!Ref AlarmasTopic]
