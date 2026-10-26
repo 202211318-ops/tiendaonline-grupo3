@@ -26,7 +26,7 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ---
 
-# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 37 DESAFÍOS (20 PUNTOS)
+# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 38 DESAFÍOS (20 PUNTOS)
 
 ## ➡️ [Descargar la rúbrica: `RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx)
 
@@ -103,21 +103,21 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 
 **Cada falla y cada ataque se provocan en vivo, contra la propia infraestructura del grupo, y se ven en el monitoreo.** EKS, las réplicas y los servicios de seguridad **cobran por hora**: se crean, se prueban, se borran y se recrean para la presentación.
 
-**37 desafíos en 6 bloques, todo o nada por bloque.** Cada desafío se construye, se demuestra en vivo y se explica. El profesor elige a qué integrante preguntar; si un desafío falla o no se sabe explicar, su bloque vale 0. Video obligatorio el día anterior, con todos los integrantes y la cámara encendida.
+**38 desafíos en 6 bloques, todo o nada por bloque.** Cada desafío se construye, se demuestra en vivo y se explica. El profesor elige a qué integrante preguntar; si un desafío falla o no se sabe explicar, su bloque vale 0. Video obligatorio el día anterior, con todos los integrantes y la cámara encendida.
 
 | Bloque | Desafíos | Puntos |
 |---|---|---|
 | A. Crecer sin cortes: contenedores y despliegue | 1 a 6 | 3 |
 | B. Balanceo de carga y caída de cada capa | 7 a 12 | 4 |
 | C. Monitoreo y autorrecuperación | 13 a 18 | 3 |
-| D. Seguridad en cada capa y defensa contra Thanos | 19 a 25 | 3 |
-| E. Capacidad y costo anticipados con Machine Learning | 26 a 31 | 3 |
-| F. La cadena de valor con IA agéntica, gobernada | 32 a 37 | 4 |
-| **Total** | **37** | **20** |
+| D. Seguridad en cada capa y defensa contra Thanos | 19 a 26 | 3 |
+| E. Capacidad y costo anticipados con Machine Learning | 27 a 32 | 3 |
+| F. La cadena de valor con IA agéntica, gobernada | 33 a 38 | 4 |
+| **Total** | **38** | **20** |
 
 ---
 
-## 🎯 Los 37 desafíos
+## 🎯 Los 38 desafíos
 
 ### Bloque A — Crecer sin cortes: contenedores y despliegue (3 puntos)
 1. **A1. Imagen Docker.** Dockerfile de varias etapas, publicado en ECR con escaneo sin hallazgos críticos y con la imagen reducida. *Explicar:* qué hace cada etapa y por qué la imagen final es más pequeña y segura.
@@ -157,25 +157,27 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
     - **Contra el agente atacante:** cómo detectan y frenan a un agente que cambia de táctica (WAF y control de bots, límites de solicitudes, GuardDuty, alertas) y cómo protegen a sus propios agentes de la manipulación.
     - **Prioridades y costo:** qué harían primero, qué dejarían para después y por qué.
     - **¿Es creíble el informe?** El ataque de un agente autónomo ya ocurrió (Medicare, Australia, 2026). ¿Es creíble que además use descifrado cuántico **hoy**? ¿Qué parte de la amenaza es real ahora y cuál es preparación para el futuro? Con fuentes.
+    - **Responder a lo que ya pasó:** reconstruyen con **sus propios logs** (ALB, WAF, CloudTrail, Flow Logs) cómo entraría un agente como Thanos en su tienda, cierran la ruta expuesta, determinan qué datos personales habrían salido y a quién habría que avisar según la Ley 29733.
     - **Ataquen su propia tienda como lo haría un agente** (solo la suya): busquen rutas, archivos o APIs que respondan **sin permiso**, cambien identificadores en la URL (`/api/v1/pedidos/1`, `/2`, `/3`…) y muestren qué lo frenó y qué no.
 
     *En vivo:* presentan el plan con el inventario de **su** cuenta (no uno genérico) y muestran al menos una medida ya aplicada. *Explicar:* por qué AES-256 resiste y RSA no, qué significa que un dato tenga que seguir secreto diez años, y **por qué el cifrado no habría evitado el caso de Australia**. La evidencia es de su cuenta (salidas de comandos y capturas), no un ensayo genérico.
+26. **D8. Un sniffer en las capas profundas.** Ver lo que los registros no muestran: el contenido del tráfico dentro de la VPC. Usan **VPC Traffic Mirroring** (copia los paquetes de una interfaz de red y los envía, encapsulados en VXLAN por UDP 4789, a un sensor con **Suricata o Zeek**) o **AWS Network Firewall** con reglas compatibles con Suricata; las alertas llegan a CloudWatch Logs y disparan una alarma por SNS ([AWS: Traffic Mirroring](https://docs.aws.amazon.com/vpc/latest/mirroring/traffic-mirroring-targets.html), [AWS: alertas de Network Firewall](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/customize-amazon-cloudwatch-alerts-for-aws-network-firewall.html)). **Verifiquen en la documentación qué fuentes admite Traffic Mirroring** y si sirve para los pods de Fargate; si no, usen Network Firewall para ese tráfico. *En vivo:* una exploración como la de Thanos contra **su propia** tienda (muchas rutas, identificadores cambiados) y una conexión saliente hacia un destino no permitido disparan alertas del sensor. *Explicar:* qué ve el sniffer que no ven los Flow Logs ni el WAF, qué no puede ver si el tráfico va cifrado, y cuánto cuesta tenerlo encendido.
 
 ### Bloque E — Capacidad y costo anticipados con Machine Learning (3 puntos)
-26. **E1. Dataset propio.** Bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan (saturado / no saturado). *Explicar:* por qué su propia telemetría es mejor que un dataset ajeno.
-27. **E2. Modelo en CPU y open source.** Predice la saturación de los próximos minutos; reproducible, con precisión, recall y cobertura de episodios, y mejor que el modelo trivial de persistencia. *Explicar:* por qué precisión y recall, y no solo el acierto.
-28. **E3. Escalado proactivo.** La predicción sube los pods antes de saturar, en vivo con k6, con contador en CloudWatch y alerta por SNS. *Explicar:* escalar por reacción frente a escalar por predicción.
-29. **E4. Qué capa se satura primero.** El modelo dice cuál será el cuello de botella (web, negocio o base de datos). *Explicar:* qué señal de cada capa lo anticipa y si habría avisado el Cyber Day pasado.
-30. **E5. Capacidad y costo de un país nuevo.** Proyectan cuántos pods, qué base de datos y cuánto costo mensual necesita abrir un país más, con etiquetas de costo por país y un presupuesto de AWS Budgets con alerta. *Explicar:* qué supuestos usaron y qué los haría equivocarse.
-31. **E6. Interpretación.** Qué señales anticipan la saturación, con cuánta anticipación y cuánto cuesta una alarma falsa frente a una caída sin aviso. *Explicar:* qué cambiarían en la arquitectura con lo que reveló el modelo.
+27. **E1. Dataset propio.** Bajo carga (k6) exportan de CloudWatch las métricas de todo el stack y las etiquetan (saturado / no saturado). *Explicar:* por qué su propia telemetría es mejor que un dataset ajeno.
+28. **E2. Modelo en CPU y open source.** Predice la saturación de los próximos minutos; reproducible, con precisión, recall y cobertura de episodios, y mejor que el modelo trivial de persistencia. *Explicar:* por qué precisión y recall, y no solo el acierto.
+29. **E3. Escalado proactivo.** La predicción sube los pods antes de saturar, en vivo con k6, con contador en CloudWatch y alerta por SNS. *Explicar:* escalar por reacción frente a escalar por predicción.
+30. **E4. Qué capa se satura primero.** El modelo dice cuál será el cuello de botella (web, negocio o base de datos). *Explicar:* qué señal de cada capa lo anticipa y si habría avisado el Cyber Day pasado.
+31. **E5. Capacidad y costo de un país nuevo.** Proyectan cuántos pods, qué base de datos y cuánto costo mensual necesita abrir un país más, con etiquetas de costo por país y un presupuesto de AWS Budgets con alerta. *Explicar:* qué supuestos usaron y qué los haría equivocarse.
+32. **E6. Interpretación.** Qué señales anticipan la saturación, con cuánta anticipación y cuánto cuesta una alarma falsa frente a una caída sin aviso. *Explicar:* qué cambiarían en la arquitectura con lo que reveló el modelo.
 
 ### Bloque F — La cadena de valor con IA agéntica, gobernada (4 puntos)
-32. **F1. Cadena de valor automatizada.** La importación de proveedores corre sola en el clúster (CronJob); el agente de stock propone la compra, el de carrito recupera la venta y el delivery asigna repartidores, conectados por eventos. *En vivo:* un pedido recorre la cadena sin intervención manual. *Explicar:* qué parte dejó de depender de una persona.
-33. **F2. Agente de operaciones: planificar y ejecutar.** Arma el plan completo de un despliegue o de un escalado antes de ejecutarlo, comparado con ReAct sobre el mismo caso. *Explicar:* cuándo conviene planificar antes y cuándo ReAct.
-34. **F3. Orquestador con subagentes.** Ante una caída provocada en vivo (bloque B), un supervisor reparte entre los subagentes de métricas, de Kubernetes y de predicción hasta llegar a la causa. *Explicar:* cómo reparte y qué pasa si un subagente falla.
-35. **F4. Memoria de incidentes.** Un segundo incidente parecido se resuelve con la memoria del primero. *Explicar:* qué guarda la memoria y qué no.
-36. **F5. Solo lectura y aprobación humana.** El subagente de Kubernetes tiene RBAC e IAM de solo lectura (su intento de borrar un pod se rechaza), y toda acción que cambia producción espera la aprobación de una persona. *Explicar:* por qué un agente no debe cambiar la producción por su cuenta.
-37. **F6. Bitácora auditable de los agentes.** Cada decisión de un agente queda registrada con qué hizo, con qué datos, por qué, quién aprobó y cuánto tardó (MTTR en los incidentes). *Explicar:* qué le muestra esa bitácora a un auditor antes de salir a bolsa.
+33. **F1. Cadena de valor automatizada.** La importación de proveedores corre sola en el clúster (CronJob); el agente de stock propone la compra, el de carrito recupera la venta y el delivery asigna repartidores, conectados por eventos. *En vivo:* un pedido recorre la cadena sin intervención manual. *Explicar:* qué parte dejó de depender de una persona.
+34. **F2. Agente de operaciones: planificar y ejecutar.** Arma el plan completo de un despliegue o de un escalado antes de ejecutarlo, comparado con ReAct sobre el mismo caso. *Explicar:* cuándo conviene planificar antes y cuándo ReAct.
+35. **F3. Orquestador con subagentes.** Ante una caída provocada en vivo (bloque B), un supervisor reparte entre los subagentes de métricas, de Kubernetes y de predicción hasta llegar a la causa. *Explicar:* cómo reparte y qué pasa si un subagente falla.
+36. **F4. Memoria de incidentes.** Un segundo incidente parecido se resuelve con la memoria del primero. *Explicar:* qué guarda la memoria y qué no.
+37. **F5. Solo lectura y aprobación humana.** El subagente de Kubernetes tiene RBAC e IAM de solo lectura (su intento de borrar un pod se rechaza), y toda acción que cambia producción espera la aprobación de una persona. *Explicar:* por qué un agente no debe cambiar la producción por su cuenta.
+38. **F6. Bitácora auditable de los agentes.** Cada decisión de un agente queda registrada con qué hizo, con qué datos, por qué, quién aprobó y cuánto tardó (MTTR en los incidentes). *Explicar:* qué le muestra esa bitácora a un auditor antes de salir a bolsa.
 
 ---
 
