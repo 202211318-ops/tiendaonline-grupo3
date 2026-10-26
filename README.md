@@ -175,6 +175,225 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 
 ---
 
+## 🗺️ Arquitectura de la fase 3
+
+```mermaid
+flowchart TB
+  subgraph Internet
+    CLI["Clientes (web y apps)"]
+    THANOS["⚠️ Thanos / bots"]
+  end
+  CLI --> CF["CloudFront (HTTPS)"]
+  THANOS -.-> CF
+  CF --> WAF["AWS WAF<br/>reglas administradas · límite por IP"]
+  WAF --> ALB["ALB · balanceo de la WEB"]
+  subgraph VPC["VPC · dos zonas de disponibilidad"]
+    subgraph EKS["EKS sobre Fargate"]
+      subgraph NSPE["namespace pe"]
+        WEBA["pod web (zona a)"]
+        WEBB["pod web (zona b)"]
+        SVC["Service · balanceo de NEGOCIO"]
+        APIA["API de pedidos (zona a)"]
+        APIB["API de pedidos (zona b)"]
+      end
+      CRON["CronJob: proveedores · predicción ML"]
+      OPS["Agente de operaciones<br/>(solo lectura)"]
+    end
+    subgraph DATOS["Capa de datos"]
+      RDSP[("RDS primario<br/>escrituras")]
+      RDSR[("RDS réplica<br/>lecturas")]
+      REDIS[("Redis<br/>sesiones · GEO")]
+    end
+  end
+  ALB --> WEBA & WEBB
+  WEBA & WEBB --> SVC
+  SVC --> APIA & APIB
+  APIA & APIB -->|escribe| RDSP
+  APIA & APIB -->|lee| RDSR
+  RDSP -. replicación .-> RDSR
+  WEBA & WEBB --> REDIS
+  SERVERLESS["Lambdas fase 2<br/>agentes · delivery"] --> RDSP
+  CW["CloudWatch<br/>tablero · alarmas"] --> SNS["SNS → equipo"]
+  GD["GuardDuty · CloudTrail"] --> SNS
+  OPS -->|lee| CW
+  ECR["ECR · imágenes escaneadas"] --> EKS
+  GHA["GitHub Actions (OIDC)<br/>único camino a producción"] --> ECR
+  GHA --> EKS
+```
+
+## 🎬 Secuencia: se cae un nodo de cada capa y todo se recrea solo
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant K6 as k6 (tráfico)
+  participant ALB
+  participant WEB as Pods web
+  participant API as Réplicas API
+  participant DB as RDS (primario / réplica)
+  participant K8S as Kubernetes
+  participant CW as CloudWatch + SNS
+  participant OPS as Agente de operaciones
+
+  K6->>ALB: 3 000 pedidos por minuto
+  ALB->>WEB: reparte entre zonas a y b
+  WEB->>API: Service reparte entre réplicas
+  API->>DB: escribe en primario · lee de réplica
+  Note over WEB: B4 · kubectl delete pod web-a
+  ALB-->>WEB: health check falla → deja de enviarle
+  K8S->>WEB: ReplicaSet crea un pod nuevo
+  CW-->>CW: alarma «targets no sanos» → SNS
+  Note over API: B5 · se elimina una réplica de la API
+  K8S->>API: crea la réplica de reemplazo
+  Note over DB: B6 · failover de RDS
+  DB-->>API: conexiones cortadas unos segundos
+  API->>DB: reintenta y se conecta al nuevo primario
+  CW-->>OPS: incidentes registrados
+  OPS->>OPS: planifica · orquesta subagentes · recuerda incidentes previos
+  OPS-->>CW: bitácora: causa, acción propuesta, quién aprobó, MTTR
+```
+
+## 🧩 Porciones de código para empezar (guías, no la solución)
+
+**A2 · Autoescalado de pods (HPA)**
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: urponline, namespace: pe }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: urponline }
+  minReplicas: 2          # al menos uno por zona
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }
+```
+
+**A5 · Un namespace por país con su cuota**
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: cuota-pais, namespace: cl }
+spec:
+  hard: { requests.cpu: "4", requests.memory: 8Gi, pods: "20" }
+```
+
+**B1/B4 · Repartir los pods entre zonas** (para que una zona caída no se lleve todos)
+```yaml
+spec:
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector: { matchLabels: { app: urponline } }
+```
+
+**B2 · Balanceo de la capa de negocio** (Service interno)
+```yaml
+apiVersion: v1
+kind: Service
+metadata: { name: api-pedidos, namespace: pe }
+spec:
+  selector: { app: api-pedidos }
+  ports: [{ port: 80, targetPort: 8080 }]   # ClusterIP: reparte entre réplicas sin salir a Internet
+```
+
+**B3 · Réplica de lectura en CloudFormation y lecturas separadas en C#**
+```yaml
+ReplicaLectura:
+  Type: AWS::RDS::DBInstance
+  Properties:
+    SourceDBInstanceIdentifier: !Ref Postgres
+    DBInstanceClass: db.t3.micro
+```
+```csharp
+// Dos conexiones: escrituras al primario, lecturas a la réplica.
+builder.Services.AddDbContext<ShopDbContext>(o => o.UseNpgsql(cfg["ConnectionStrings:Postgres"]));
+builder.Services.AddDbContext<ShopReadDbContext>(o => o.UseNpgsql(cfg["ConnectionStrings:PostgresLectura"])
+    .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
+```
+
+**B4 · B5 · B6 · Provocar las caídas (solo en su propia cuenta)**
+```bash
+kubectl -n pe delete pod -l app=urponline --field-selector status.phase=Running --wait=false | head -1   # un pod web
+kubectl -n pe delete pod -l app=api-pedidos | head -1                                                    # una réplica de negocio
+aws rds reboot-db-instance --db-instance-identifier $DB_ID --force-failover                              # failover (requiere Multi-AZ)
+aws rds promote-read-replica --db-instance-identifier $REPLICA_ID                                        # sin Multi-AZ: promover la réplica
+kubectl -n pe get pods -w                                                                                # ver el reemplazo crearse solo
+```
+
+**C2 · Alarma por capa** (targets no sanos del ALB)
+```yaml
+AlarmaWebNoSana:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    Namespace: AWS/ApplicationELB
+    MetricName: UnHealthyHostCount
+    Dimensions: [{ Name: TargetGroup, Value: !GetAtt TG.TargetGroupFullName }, { Name: LoadBalancer, Value: !GetAtt ALB.LoadBalancerFullName }]
+    Statistic: Maximum
+    Period: 60
+    EvaluationPeriods: 1
+    Threshold: 0
+    ComparisonOperator: GreaterThanThreshold
+    AlarmActions: [!Ref AlertasTopic]
+```
+
+**D1 · WAF con límite por IP**
+```yaml
+WebAcl:
+  Type: AWS::WAFv2::WebACL
+  Properties:
+    Scope: REGIONAL
+    DefaultAction: { Allow: {} }
+    VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: urponline-waf }
+    Rules:
+      - Name: limite-por-ip
+        Priority: 1
+        Action: { Block: {} }
+        Statement: { RateBasedStatement: { Limit: 300, AggregateKeyType: IP } }   # 300 solicitudes por IP cada 5 minutos
+        VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: limite-por-ip }
+```
+
+**D2 · Frenar un secreto antes del repositorio** (paso del pipeline)
+```yaml
+- name: Buscar secretos en el código
+  uses: gitleaks/gitleaks-action@v2
+```
+
+**D7 · Revisar qué intercambio de claves usa un servidor** (parte del inventario criptográfico)
+```bash
+# Con OpenSSL 3.5 o más nuevo: ¿el servidor acepta el intercambio híbrido post-cuántico X25519MLKEM768?
+openssl s_client -connect TU-DOMINIO:443 -groups X25519MLKEM768 </dev/null 2>/dev/null | grep -i "group\|Negotiated"
+```
+
+**E1 · Exportar métricas para el dataset** (ya existe `ml/collect_metrics.py`)
+```bash
+python ml/collect_metrics.py --stack URPOnlineLab --horas 1 --p95-umbral-ms 500 --salida dataset.csv
+```
+
+**F5 · Rol de solo lectura para el subagente de Kubernetes**
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: agente-solo-lectura }
+rules:
+  - apiGroups: ["", "apps"]
+    resources: ["pods", "deployments", "events", "nodes"]
+    verbs: ["get", "list", "watch"]          # sin create, update ni delete
+```
+
+**F6 · Una entrada de la bitácora del agente** (lo que debe quedar por cada decisión)
+```json
+{ "incidente": "INC-0142", "agente": "operaciones", "detectado": "2026-11-14T20:04:11Z",
+  "causa": "failover de RDS: 23 s sin escrituras", "datos": ["RDS DatabaseConnections", "ALB 5xx"],
+  "accionPropuesta": "subir minReplicas de api-pedidos a 4", "aprobadoPor": "ana@urponline.example",
+  "resuelto": "2026-11-14T20:06:40Z", "mttrSegundos": 149 }
+```
+
+> Estas porciones son **puntos de partida**. Cada grupo las adapta a su arquitectura y debe poder explicar cada línea. Los nombres (`pe`, `api-pedidos`, `$DB_ID`) son de ejemplo.
+
+---
+
 ## 🧭 Instrucciones: cómo trabajar la fase 3
 
 1. **Partan de su repositorio de la fase 2.** La fase 3 se construye encima: la tienda, los agentes, los pagos y el delivery siguen funcionando. Traigan la rama `fase-3` del curso: `git pull curso fase-3` y luego `git push`.
