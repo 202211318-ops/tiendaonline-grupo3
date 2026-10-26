@@ -4,7 +4,7 @@
 # Redis, que solo aceptan trafico desde esas subredes (NACL de datos) y desde sus security groups.
 #
 # Antes de crear, reemplaza con los Outputs de la pila URPOnlineLab:
-#   <VPC_ID>  <PUBLIC_A>  <PUBLIC_B>  <APP_A>  <APP_B>  <DB_SECRET_ARN>
+#   <VPC_ID>  <PUBLIC_A>  <PUBLIC_B>  <APP_A>  <APP_B>  <DB_SECRET_ARN>  <SUPPLIER_BUCKET>
 # Crea:   eksctl create cluster -f k8s/eksctl-cluster.yaml
 # Borra:  eksctl delete cluster -f k8s/eksctl-cluster.yaml   (EKS cobra el clúster por hora: bórralo al terminar)
 apiVersion: eksctl.io/v1alpha5
@@ -32,6 +32,7 @@ fargateProfiles:
     subnets: [app-a, app-b]
     selectors:
       - namespace: urponline
+      - namespace: urponline-cl        # Chile (A5, k8s/paises.yaml)
       - namespace: kube-system
       - namespace: argo-rollouts        # el controlador del blue/green (Argo Rollouts)
 
@@ -63,6 +64,29 @@ iam:
             Action: [cloudwatch:PutMetricData]
             Resource: "*"
             Condition: { StringEquals: { "cloudwatch:namespace": URPOnline } }
+    # La tienda de Chile (A5): mismo permiso que la de Peru.
+    - metadata: { name: urponline, namespace: urponline-cl }
+      attachPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [secretsmanager:GetSecretValue]
+            Resource: "<DB_SECRET_ARN>"
+          - Effect: Allow
+            Action: [cloudwatch:PutMetricData]
+            Resource: "*"
+            Condition: { StringEquals: { "cloudwatch:namespace": URPOnline } }
+    # El importador de proveedores (F1, k8s/proveedores-cronjob.yaml): lee el CSV del bucket y el secreto de RDS.
+    - metadata: { name: proveedores, namespace: urponline }
+      attachPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [s3:GetObject]
+            Resource: "arn:aws:s3:::<SUPPLIER_BUCKET>/suppliers/*"
+          - Effect: Allow
+            Action: [secretsmanager:GetSecretValue]
+            Resource: "<DB_SECRET_ARN>"
     # El AWS Load Balancer Controller: crea el ALB a partir del Ingress (k8s/deployment.yaml).
     - metadata: { name: aws-load-balancer-controller, namespace: kube-system }
       wellKnownPolicies:

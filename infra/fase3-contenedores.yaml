@@ -34,6 +34,13 @@ Resources:
       RepositoryName: urponline-ml
       ImageScanningConfiguration: { ScanOnPush: true }
 
+  # Imagen del importador de proveedores (Worker/Dockerfile) que corre como CronJob en EKS (F1).
+  EcrWorkerRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: urponline-worker
+      ImageScanningConfiguration: { ScanOnPush: true }
+
   # Bucket del modelo entrenado (modelo.joblib): el CronJob lo descarga en cada corrida.
   ModelosBucket:
     Type: AWS::S3::Bucket
@@ -86,6 +93,9 @@ Outputs:
   EcrMlRepoUri:
     Description: URI del repositorio ECR del predictor de ML.
     Value: !GetAtt EcrMlRepo.RepositoryUri
+  EcrWorkerRepoUri:
+    Description: URI del repositorio ECR del importador de proveedores.
+    Value: !GetAtt EcrWorkerRepo.RepositoryUri
   ModelosBucket:
     Description: Bucket donde subes modelo.joblib (lo lee el CronJob de prediccion).
     Value: !Ref ModelosBucket

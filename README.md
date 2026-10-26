@@ -402,6 +402,31 @@ rules:
 
 > Estas porciones son **puntos de partida**. Cada grupo las adapta a su arquitectura y debe poder explicar cada línea. Los nombres (`pe`, `api-pedidos`, `$DB_ID`) son de ejemplo.
 
+## 🧱 Lo que ya trae el repositorio (código base de la fase 3)
+
+Todo el código de las fases 1 y 2 (tienda, agentes, delivery, apps móviles) está en esta rama. Para la fase 3 el repositorio ya trae esta base; **lo que no está en la tabla lo construye el grupo**.
+
+| Archivo | Desafíos | Qué hace |
+|---|---|---|
+| `Dockerfile` | A1 | Imagen de la tienda en dos etapas, usuario no root, health check. |
+| `k8s/eksctl-cluster.yaml` | A2, A5, F1 | Clúster EKS sobre Fargate en la VPC de la tienda; roles IAM por pod (IRSA) para la tienda (Perú y Chile), el predictor y el importador de proveedores. |
+| `k8s/deployment.yaml` | A2, A4, B1, B3, B4, D1 | Web con blue/green (Argo Rollouts), HPA, pods repartidos en dos zonas, PodDisruptionBudget, apagado ordenado (`preStop`), Ingress del ALB que manda `/api/` a la capa de negocio y lleva el WAF; conexión de lectura a la réplica. |
+| `k8s/bluegreen-analisis.yaml` | A4 | Prueba de carga k6 antes y después del cambio; si falla, vuelve sola a la versión anterior. |
+| `k8s/api-pedidos.yaml` | B2, B5 | Capa de negocio separada: la API de la tienda en su propio Deployment, Service interno, HPA y PodDisruptionBudget. |
+| `k8s/paises.yaml` | A5 | Namespace de Chile y cuotas de recursos por país, con el comando para desplegar Chile. |
+| `infra/urponline-oneclick.yaml` | B3, B6 | Parámetro `EnableReadReplica=true`: réplica de lectura de RDS en la otra zona (Outputs `RDSReplicaEndpoint`, `RDSReplicaId`, `RDSInstanceId`). |
+| `Data/ShopReadDbContext.cs` | B3 | El catálogo y la búsqueda leen de la réplica (`ConnectionStrings__PostgresLectura`); pedidos y pagos escriben en el primario. Sin réplica, lee del primario. Si alguien intenta guardar con él, falla. |
+| `infra/fase3-seguridad.yaml` | C1, C2, C5, D1 | WAF (límite por IP + reglas administradas de AWS), alarmas por capa (pods no sanos, 5xx, p95, conexiones y CPU de RDS, retraso de la réplica, bloqueos del WAF) y tablero de las tres capas. |
+| `infra/fase3-contenedores.yaml` | A1, E3, F1 | Repositorios ECR (tienda, predictor, importador), bucket del modelo, alerta de saturación predicha. |
+| `Worker/Dockerfile` + `k8s/proveedores-cronjob.yaml` | F1 | El importador de proveedores corre solo cada hora en el clúster y lee la contraseña de RDS de Secrets Manager. |
+| `ml/` + `k8s/prediccion.yaml` | E1–E3 | Recolección de métricas, entrenamiento, predicción y escalado proactivo del HPA cada minuto. |
+| `k8s/agente-solo-lectura.yaml` | F5 | Cuenta del subagente de Kubernetes con RBAC de solo lectura (`kubectl auth can-i delete pods` responde `no`). |
+| `infra/respuesta_intrusion.py` | D6 | Respuesta automática a intrusión (fase 1) que el grupo extiende al clúster. |
+
+**Orden de despliegue:** pila `URPOnlineLab` (con `EnableReadReplica=true`) → pila `urponline-fase3` (`infra/fase3-contenedores.yaml`) → `eksctl create cluster -f k8s/eksctl-cluster.yaml` → `kubectl apply` de `paises.yaml`, `bluegreen-analisis.yaml`, `deployment.yaml` (sin la línea del WAF), `api-pedidos.yaml`, `proveedores-cronjob.yaml`, `prediccion.yaml` y `agente-solo-lectura.yaml` → pila `urponline-fase3-seguridad` (`infra/fase3-seguridad.yaml`, con el nombre del ALB que creó el Ingress) → volver a aplicar `deployment.yaml` con el `WebAclArn`.
+
+**Lo que construye el grupo:** A3 (nodos EC2 para comparar), A6 (pipeline con OIDC hasta EKS), B6 (failover medido), C3–C6 (recuperación medida, SLO con presupuesto de errores, recuperación ante desastres), D2–D8 (secretos, imágenes revisadas, aislamiento de red, manipulación de agentes, GuardDuty y contención, plan contra Thanos, sniffer), E4–E6 y F2–F4, F6 (agente de operaciones, orquestador, memoria y bitácora).
+
 ---
 
 ## 🧭 Instrucciones: cómo trabajar la fase 3

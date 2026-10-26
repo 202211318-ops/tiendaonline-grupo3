@@ -4,11 +4,19 @@ using Npgsql;
 using System.Globalization;
 // Usage: dotnet run --project Worker -- --source local --file ./examples/products.csv
 //    or: dotnet run --project Worker -- --source s3 --bucket BUCKET --key supplier/products.csv
-// Credentials: local AWS profile or EC2 IAM role; never embed access keys.
+// Credentials: local AWS profile, EC2 IAM role or EKS pod role (IRSA); never embed access keys.
 var argsMap=new Dictionary<string,string>();
 for(int i=0;i<args.Length-1;i+=2) if(args[i].StartsWith("--"))argsMap[args[i][2..]]=args[i+1];
 string value(string name,string fallback="")=>argsMap.GetValueOrDefault(name,fallback);
 var db=Environment.GetEnvironmentVariable("ConnectionStrings__Postgres")??throw new Exception("Missing ConnectionStrings__Postgres");
+// Fase 3 (CronJob en EKS): sin contrasena en la cadena; la pide a Secrets Manager con el rol IAM del pod (IRSA).
+var secretArn=Environment.GetEnvironmentVariable("Database__SecretArn");
+if(!string.IsNullOrWhiteSpace(secretArn)){
+ using var sm=new Amazon.SecretsManager.AmazonSecretsManagerClient();
+ var secret=await sm.GetSecretValueAsync(new Amazon.SecretsManager.Model.GetSecretValueRequest{SecretId=secretArn});
+ using var json=System.Text.Json.JsonDocument.Parse(secret.SecretString);
+ db=new NpgsqlConnectionStringBuilder(db){Password=json.RootElement.GetProperty("password").GetString()}.ConnectionString;
+}
 string source=value("source","local");
 using var reader=new StreamReader(await OpenFile());
 await using var conn=new NpgsqlConnection(db);await conn.OpenAsync();

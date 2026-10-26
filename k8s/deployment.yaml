@@ -8,6 +8,8 @@
 # Reemplaza antes de aplicar (Outputs de las pilas URPOnlineLab y urponline-fase3):
 #   <ECR_IMAGE>      imagen de tu ECR, p. ej. 123456789012.dkr.ecr.us-east-2.amazonaws.com/urponline:v1
 #   <RDS_ENDPOINT>   Output RDSEndpoint        <REDIS_ENDPOINT>  Output RedisPrimary
+#   <RDS_REPLICA_ENDPOINT>  Output RDSReplicaEndpoint (pila con EnableReadReplica=true). Sin replica,
+#                    pon ahi el mismo <RDS_ENDPOINT>: el catalogo lee del primario.
 #   <DB_SECRET_ARN>  Output DbSecretArn        <PUBLIC_A>,<PUBLIC_B>  Outputs PublicSubnetA/B
 # Sin contrasenas aqui: la de RDS la lee la app de Secrets Manager con el rol IAM del ServiceAccount
 # 'urponline' (IRSA, creado por eksctl), igual que en las EC2.
@@ -19,6 +21,8 @@ metadata:
   namespace: urponline
 data:
   ConnectionStrings__Postgres: "Host=<RDS_ENDPOINT>;Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true"
+  # B3: el catalogo y la busqueda leen de la replica (ShopReadDbContext); pedidos y pagos escriben en el primario.
+  ConnectionStrings__PostgresLectura: "Host=<RDS_REPLICA_ENDPOINT>;Port=5432;Database=urponline;Username=urponline;SSL Mode=Require;Trust Server Certificate=true"
   ConnectionStrings__Redis: "<REDIS_ENDPOINT>:6379,ssl=true,abortConnect=false"
   Database__SecretArn: "<DB_SECRET_ARN>"
   AWS__Region: "us-east-2"
@@ -54,6 +58,14 @@ spec:
       labels: { app: urponline }
     spec:
       serviceAccountName: urponline        # rol IAM (IRSA): Secrets Manager + CloudWatch
+      # B1/B4: un pod por zona como minimo, para que caiga una zona y no se lleve toda la web.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: urponline } }
+      # B4: al borrar un pod, primero el ALB deja de mandarle trafico (preStop) y despues termina lo que tenia en curso.
+      terminationGracePeriodSeconds: 45
       containers:
         - name: urponline
           image: <ECR_IMAGE>
@@ -72,9 +84,23 @@ spec:
             httpGet: { path: /health, port: 8080 }
             initialDelaySeconds: 20
             periodSeconds: 15
+          lifecycle:
+            preStop:
+              exec: { command: ["sleep", "15"] }   # tiempo para que el ALB saque el pod de su target group
           resources:
             requests: { cpu: "250m", memory: "512Mi" }
             limits:   { cpu: "1",    memory: "1Gi" }
+---
+# B4: durante una caida o un cambio de version, nunca quedan menos de 1 pod web disponible.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: urponline
+  namespace: urponline
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: urponline }
 ---
 apiVersion: v1
 kind: Service
@@ -113,11 +139,24 @@ metadata:
     alb.ingress.kubernetes.io/subnets: <PUBLIC_A>,<PUBLIC_B>
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10"   # B4: detecta antes un pod caido
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
+    # D1: el WAF (Output WebAclArn de infra/fase3-seguridad.yaml) queda delante de este ALB.
+    # Mientras no crees esa pila, borra esta linea: con el texto <WAF_ACL_ARN> el ALB no se crea.
+    alb.ingress.kubernetes.io/wafv2-acl-arn: <WAF_ACL_ARN>
 spec:
   ingressClassName: alb
   rules:
     - http:
         paths:
+          # B2: la API va a la capa de negocio (k8s/api-pedidos.yaml), con su propio Service y sus replicas.
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: api-pedidos
+                port: { number: 80 }
           - path: /
             pathType: Prefix
             backend:

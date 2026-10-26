@@ -1,0 +1,97 @@
+# Fase 3 - Capa de NEGOCIO separada de la web (B2, B5): la API de la tienda corre en su propio Deployment,
+# con sus propias replicas en las dos zonas, detras de su propio Service (balanceo interno de Kubernetes).
+# El Ingress del ALB (k8s/deployment.yaml) manda /api/ aqui y el resto a los pods web.
+#   /api/v1/products        catalogo (lee de la replica de RDS, B3)
+#   /api/comida/...         restaurantes, platos, busqueda y soporte del delivery (fase 2)
+# Es la MISMA imagen de la tienda con otro rol: asi se escala y se cae por separado sin duplicar codigo.
+# Usa el ConfigMap urponline-config y el ServiceAccount urponline de k8s/deployment.yaml (aplicalo antes).
+# Reemplaza <ECR_IMAGE> igual que en k8s/deployment.yaml.
+#
+# B5 en vivo:  kubectl -n urponline delete pod -l app=api-pedidos --wait=false | head -1
+#              kubectl -n urponline get pods -l app=api-pedidos -w      (el reemplazo se crea solo)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-pedidos
+  namespace: urponline
+  labels: { app: api-pedidos }
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # nunca baja de 2 replicas durante un cambio
+  selector:
+    matchLabels: { app: api-pedidos }
+  template:
+    metadata:
+      labels: { app: api-pedidos }
+    spec:
+      serviceAccountName: urponline
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: api-pedidos } }
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: api
+          image: <ECR_IMAGE>
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+          envFrom:
+            - configMapRef: { name: urponline-config }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          lifecycle:
+            preStop:
+              exec: { command: ["sleep", "15"] }   # B5: deja de recibir solicitudes nuevas y termina las que tiene
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-pedidos
+  namespace: urponline
+spec:
+  selector: { app: api-pedidos }
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP          # balanceo interno: reparte entre las replicas sanas, sin salir a Internet
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-pedidos
+  namespace: urponline
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: api-pedidos }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-pedidos
+  namespace: urponline
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: api-pedidos }
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }

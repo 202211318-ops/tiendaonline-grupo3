@@ -43,6 +43,11 @@ Parameters:
     Type: String
     Default: 'true'
     AllowedValues: ['true','false']
+  EnableReadReplica:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true','false']
+    Description: Fase 3 (B3) - replica de lectura de RDS para el catalogo. Cobra por hora como otra instancia; exige DBBackupRetentionDays mayor que 0.
   AgentesBusName:
     Type: String
     Default: ''
@@ -58,6 +63,7 @@ Parameters:
 Conditions:
   HayCorreoSeguridad: !Not [!Equals [!Ref SecurityEmail, '']]
   MultiAZ: !Equals [!Ref EnableMultiAZ,'true']
+  ConReplica: !Equals [!Ref EnableReadReplica,'true']
 Resources:
   VPC:
     Type: AWS::EC2::VPC
@@ -203,6 +209,20 @@ Resources:
       BackupRetentionPeriod: !Ref DBBackupRetentionDays
       MultiAZ: !If [MultiAZ,true,false]
       StorageEncrypted: true
+  # Fase 3 (B3) - Balanceo en la base de datos: replica de lectura asincrona del primario, en la otra zona.
+  # El catalogo y la busqueda leen de aqui (ConnectionStrings__PostgresLectura en k8s/deployment.yaml);
+  # los pedidos y pagos escriben en el primario. Hereda el cifrado, el grupo de subredes y el usuario del primario.
+  # B6 sin Multi-AZ: aws rds promote-read-replica la convierte en primario independiente (no se puede deshacer).
+  ReplicaLectura:
+    Type: AWS::RDS::DBInstance
+    Condition: ConReplica
+    DeletionPolicy: Delete
+    Properties:
+      SourceDBInstanceIdentifier: !Ref Postgres
+      DBInstanceClass: !Ref DBInstanceClass
+      AvailabilityZone: !Select [1, !GetAZs '']
+      VPCSecurityGroups: [!Ref DbSG]
+      PubliclyAccessible: false
   # AWS Secrets Manager: guarda usuario y contraseña de RDS. La app lo lee al arrancar con el AWS SDK
   # (GetSecretValue); la contraseña ya no se escribe en /etc/urponline.env de la EC2.
   # Claves de acceso a /admin (modelos, promociones, compras) y a /Analytics. Las GENERA Secrets Manager:
@@ -735,6 +755,9 @@ Outputs:
   ApplicationHTTPS: {Description: URL segura de la tienda (CloudFront), Value: !Sub "https://${CDN.DomainName}"}
   ApplicationHTTP: {Value: !Sub "http://${ALB.DNSName}"}
   RDSEndpoint: {Value: !GetAtt Postgres.Endpoint.Address}
+  RDSInstanceId: {Description: Identificador del primario (failover y alarmas), Value: !Ref Postgres}
+  RDSReplicaEndpoint: {Condition: ConReplica, Description: Replica de lectura (ConnectionStrings__PostgresLectura), Value: !GetAtt ReplicaLectura.Endpoint.Address}
+  RDSReplicaId: {Condition: ConReplica, Description: Identificador de la replica (promote-read-replica y alarma de retraso), Value: !Ref ReplicaLectura}
   RedisPrimary: {Value: !GetAtt Redis.PrimaryEndPoint.Address}
   S3SupplierBucket: {Value: !Ref SupplierBucket}
   VpcId: {Value: !Ref VPC}

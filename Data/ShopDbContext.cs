@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using TiendaOnline.Models;
 namespace TiendaOnline.Data;
-public class ShopDbContext(DbContextOptions<ShopDbContext> options) : DbContext(options) {
+public class ShopDbContext : DbContext {
+ public ShopDbContext(DbContextOptions<ShopDbContext> options) : base(options) {}
+ // Para ShopReadDbContext (fase 3): mismo modelo, otra conexion.
+ protected ShopDbContext(DbContextOptions options) : base(options) {}
  public DbSet<Product> Products => Set<Product>();
  public DbSet<Order> Orders => Set<Order>();
  public DbSet<OrderItem> OrderItems => Set<OrderItem>();

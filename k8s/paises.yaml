@@ -1,0 +1,47 @@
+# Fase 3 (A5) - Un pais no tumba a otro: cada pais en su namespace, con su cuota de recursos.
+# urponline = Peru (el namespace de k8s/deployment.yaml); urponline-cl = Chile.
+# Para desplegar la tienda de Chile con los mismos manifiestos (cambia el namespace y las URL internas):
+#   for f in k8s/bluegreen-analisis.yaml k8s/deployment.yaml k8s/api-pedidos.yaml; do
+#     sed -e 's/namespace: urponline$/namespace: urponline-cl/' -e 's/\.urponline\.svc/.urponline-cl.svc/' "$f" | kubectl apply -f -
+#   done
+# (crea un segundo ALB para Chile; en produccion se usaria un dominio por pais).
+# El namespace urponline-cl ya esta en el Fargate profile (k8s/eksctl-cluster.yaml).
+# Prueba: satura Chile con k6 y mira que Peru sigue con su p95 (las cuotas topan a Chile, no a Peru).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: urponline-cl
+  labels: { pais: cl }
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: cuota-pais, namespace: urponline }
+spec:
+  # Alcanza para 10 pods web + 10 de la version nueva durante el blue/green + 8 de la API + los CronJobs.
+  hard: { requests.cpu: "10", requests.memory: 20Gi, limits.cpu: "20", limits.memory: 40Gi, pods: "40" }
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: cuota-pais, namespace: urponline-cl }
+spec:
+  hard: { requests.cpu: "3", requests.memory: 6Gi, limits.cpu: "6", limits.memory: 12Gi, pods: "15" }
+---
+# Con cuota, todo pod debe declarar requests y limits; estos son los valores si un manifiesto los omite.
+apiVersion: v1
+kind: LimitRange
+metadata: { name: limites-por-defecto, namespace: urponline }
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 250m, memory: 256Mi }
+      default: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: v1
+kind: LimitRange
+metadata: { name: limites-por-defecto, namespace: urponline-cl }
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 250m, memory: 256Mi }
+      default: { cpu: 500m, memory: 512Mi }

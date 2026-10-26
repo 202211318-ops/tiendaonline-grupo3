@@ -1,0 +1,269 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Fase 3 - Seguridad en la entrada (D1) y alarmas por capa (C1, C2). Se despliega DESPUES de que el Ingress
+  creo el ALB (k8s/deployment.yaml). Crea: AWS WAF (reglas administradas + limite por IP) para el ALB del Ingress,
+  alarmas de la web (targets no sanos, 5xx, p95), de la base de datos (conexiones, CPU, retraso de la replica),
+  un tablero de CloudWatch con las tres capas y el tema SNS que avisa al equipo.
+  WAF cobra por mes (Web ACL + reglas) aunque no reciba trafico, prorrateado por hora: borrar la pila al terminar.
+
+Parameters:
+  AlbFullName:
+    Type: String
+    Default: ''
+    Description: >
+      Dimension LoadBalancer del ALB del Ingress, ej. app/k8s-urponlin-1a2b3c4d5e/0123456789abcdef
+      (aws elbv2 describe-load-balancers; es lo que va despues de "loadbalancer/" en el ARN). Vacio = sin alarmas de la web.
+  TargetGroupFullName:
+    Type: String
+    Default: ''
+    Description: Dimension TargetGroup de los pods web, ej. targetgroup/k8s-urponlin-urponlin-abc123/0123456789abcdef
+  DbInstanceId:
+    Type: String
+    Description: Output RDSInstanceId de la pila URPOnlineLab (el primario).
+  DbReplicaId:
+    Type: String
+    Default: ''
+    Description: Output RDSReplicaId (vacio si la pila no tiene replica).
+  MaxConexionesDb:
+    Type: Number
+    Default: 70
+    Description: >
+      Umbral de conexiones del primario. Comprueba el maximo real con SHOW max_connections; el Cyber Day
+      cayo al llegar al maximo, asi que se avisa ANTES.
+  LimitePorIp:
+    Type: Number
+    Default: 300
+    MinValue: 10
+    Description: Solicitudes por IP en 5 minutos antes de bloquear (prueba de contrasenas, agentes como Thanos).
+  CorreoAlertas:
+    Type: String
+    Default: ''
+    Description: Correo que recibe las alarmas (vacio = sin suscripcion).
+
+Conditions:
+  HayAlb: !And [!Not [!Equals [!Ref AlbFullName, '']], !Not [!Equals [!Ref TargetGroupFullName, '']]]
+  HayReplica: !Not [!Equals [!Ref DbReplicaId, '']]
+  HayCorreo: !Not [!Equals [!Ref CorreoAlertas, '']]
+
+Resources:
+
+  # ---------- D1: WAF delante del ALB ----------
+  # Se asocia al ALB con la anotacion alb.ingress.kubernetes.io/wafv2-acl-arn del Ingress (Output WebAclArn).
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: urponline-waf
+      Scope: REGIONAL
+      DefaultAction: { Allow: {} }
+      VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: urponline-waf }
+      Rules:
+        # Prueba de contrasenas y exploracion masiva de rutas: demasiadas solicitudes de una misma IP.
+        - Name: limite-por-ip
+          Priority: 1
+          Action: { Block: {} }
+          Statement: { RateBasedStatement: { Limit: !Ref LimitePorIp, AggregateKeyType: IP } }
+          VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: limite-por-ip }
+        # Ataques web comunes (OWASP): XSS, rutas de sistema, cuerpos enormes...
+        - Name: aws-reglas-comunes
+          Priority: 2
+          OverrideAction: { None: {} }
+          Statement: { ManagedRuleGroupStatement: { VendorName: AWS, Name: AWSManagedRulesCommonRuleSet } }
+          VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: aws-reglas-comunes }
+        # Entradas conocidas como maliciosas (Log4j, patrones de explotacion).
+        - Name: aws-entradas-maliciosas
+          Priority: 3
+          OverrideAction: { None: {} }
+          Statement: { ManagedRuleGroupStatement: { VendorName: AWS, Name: AWSManagedRulesKnownBadInputsRuleSet } }
+          VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: aws-entradas-maliciosas }
+        # IPs con mala reputacion segun la inteligencia de amenazas de AWS (bots, escaneres).
+        - Name: aws-reputacion-ip
+          Priority: 4
+          OverrideAction: { None: {} }
+          Statement: { ManagedRuleGroupStatement: { VendorName: AWS, Name: AWSManagedRulesAmazonIpReputationList } }
+          VisibilityConfig: { SampledRequestsEnabled: true, CloudWatchMetricsEnabled: true, MetricName: aws-reputacion-ip }
+
+  # ---------- C2: avisos al equipo ----------
+  AlarmasTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: urponline-alarmas-capas
+
+  AlarmasSuscripcion:
+    Type: AWS::SNS::Subscription
+    Condition: HayCorreo
+    Properties:
+      TopicArn: !Ref AlarmasTopic
+      Protocol: email
+      Endpoint: !Ref CorreoAlertas
+
+  # Web: un pod dejo de pasar el health check (B4).
+  AlarmaWebNoSana:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HayAlb
+    Properties:
+      AlarmName: urponline-web-target-no-sano
+      AlarmDescription: Un pod web no pasa el health check del ALB (caida de un nodo de la web).
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Dimensions:
+        - { Name: LoadBalancer, Value: !Ref AlbFullName }
+        - { Name: TargetGroup, Value: !Ref TargetGroupFullName }
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmasTopic]
+      OKActions: [!Ref AlarmasTopic]
+
+  # Web y negocio: errores 5xx que ve el cliente (de los pods web o de la API).
+  AlarmaErrores5xx:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HayAlb
+    Properties:
+      AlarmName: urponline-errores-5xx
+      AlarmDescription: Los pods responden errores 5xx (la web o la capa de negocio fallan).
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions: [{ Name: LoadBalancer, Value: !Ref AlbFullName }]
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmasTopic]
+      OKActions: [!Ref AlarmasTopic]
+
+  # SLO (C5): p95 por encima de 500 ms durante 3 minutos.
+  AlarmaLatenciaP95:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HayAlb
+    Properties:
+      AlarmName: urponline-p95-sobre-500ms
+      AlarmDescription: El p95 de respuesta supera el objetivo de servicio (500 ms).
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      Dimensions: [{ Name: LoadBalancer, Value: !Ref AlbFullName }]
+      ExtendedStatistic: p95
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 0.5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmasTopic]
+      OKActions: [!Ref AlarmasTopic]
+
+  # Base de datos: se acerca al maximo de conexiones (lo que tumbo el Cyber Day).
+  AlarmaConexionesDb:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: urponline-db-conexiones
+      AlarmDescription: El primario de RDS se acerca al maximo de conexiones.
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref DbInstanceId }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: !Ref MaxConexionesDb
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmasTopic]
+      OKActions: [!Ref AlarmasTopic]
+
+  AlarmaCpuDb:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: urponline-db-cpu
+      AlarmDescription: CPU del primario de RDS sobre 80 % por 3 minutos.
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref DbInstanceId }]
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmasTopic]
+
+  # B3/B6: la replica se atrasa (el catalogo muestra datos viejos) o deja de replicar.
+  AlarmaRetrasoReplica:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HayReplica
+    Properties:
+      AlarmName: urponline-db-retraso-replica
+      AlarmDescription: La replica de lectura va mas de 30 segundos atrasada respecto al primario.
+      Namespace: AWS/RDS
+      MetricName: ReplicaLag
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref DbReplicaId }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 30
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching       # sin dato = la replica no reporta: tambien es problema
+      AlarmActions: [!Ref AlarmasTopic]
+      OKActions: [!Ref AlarmasTopic]
+
+  # D1: el WAF esta bloqueando (un bot o un agente probando la tienda).
+  AlarmaWafBloqueos:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: urponline-waf-bloqueos
+      AlarmDescription: El WAF bloqueo mas de 100 solicitudes en 5 minutos (posible ataque automatizado).
+      Namespace: AWS/WAFV2
+      MetricName: BlockedRequests
+      Dimensions:
+        - { Name: WebACL, Value: urponline-waf }
+        - { Name: Region, Value: !Ref AWS::Region }
+        - { Name: Rule, Value: ALL }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmasTopic]
+
+  # ---------- C1: tablero de salud por capa ----------
+  TableroCapas:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: URPOnline-fase3-capas
+      DashboardBody: !Sub
+        - |
+          {"widgets":[
+            {"type":"metric","x":0,"y":0,"width":8,"height":6,"properties":{"title":"WEB: pods sanos y no sanos","region":"${AWS::Region}","period":60,"view":"timeSeries",
+              "metrics":[["AWS/ApplicationELB","HealthyHostCount","TargetGroup","${Tg}","LoadBalancer","${Alb}",{"stat":"Minimum","label":"Sanos"}],[".","UnHealthyHostCount",".",".",".",".",{"stat":"Maximum","label":"No sanos"}]]}},
+            {"type":"metric","x":8,"y":0,"width":8,"height":6,"properties":{"title":"WEB y NEGOCIO: 5xx y p95","region":"${AWS::Region}","period":60,"view":"timeSeries",
+              "metrics":[["AWS/ApplicationELB","HTTPCode_Target_5XX_Count","LoadBalancer","${Alb}",{"stat":"Sum","label":"5xx"}],[".","TargetResponseTime",".",".",{"stat":"p95","label":"p95 (s)","yAxis":"right"}]]}},
+            {"type":"metric","x":16,"y":0,"width":8,"height":6,"properties":{"title":"WAF: bloqueadas y permitidas","region":"${AWS::Region}","period":60,"view":"timeSeries",
+              "metrics":[["AWS/WAFV2","BlockedRequests","WebACL","urponline-waf","Region","${AWS::Region}","Rule","ALL",{"stat":"Sum","label":"Bloqueadas"}],[".","AllowedRequests",".",".",".",".",".",".",{"stat":"Sum","label":"Permitidas"}]]}},
+            {"type":"metric","x":0,"y":6,"width":8,"height":6,"properties":{"title":"BASE DE DATOS: conexiones","region":"${AWS::Region}","period":60,"view":"timeSeries",
+              "metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${DbInstanceId}",{"stat":"Maximum","label":"Primario"}],["...","${Replica}",{"stat":"Maximum","label":"Replica"}]]}},
+            {"type":"metric","x":8,"y":6,"width":8,"height":6,"properties":{"title":"BASE DE DATOS: CPU %","region":"${AWS::Region}","period":60,"view":"timeSeries",
+              "metrics":[["AWS/RDS","CPUUtilization","DBInstanceIdentifier","${DbInstanceId}",{"stat":"Average","label":"Primario"}],["...","${Replica}",{"stat":"Average","label":"Replica"}]]}},
+            {"type":"metric","x":16,"y":6,"width":8,"height":6,"properties":{"title":"BASE DE DATOS: retraso de la replica (s)","region":"${AWS::Region}","period":60,"view":"timeSeries",
+              "metrics":[["AWS/RDS","ReplicaLag","DBInstanceIdentifier","${Replica}",{"stat":"Maximum"}]]}},
+            {"type":"alarm","x":0,"y":12,"width":24,"height":3,"properties":{"title":"Alarmas por capa","alarms":[
+              "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:urponline-db-conexiones",
+              "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:urponline-db-cpu",
+              "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:urponline-waf-bloqueos"]}}
+          ]}
+        - Alb: !If [HayAlb, !Ref AlbFullName, 'sin-alb']
+          Tg: !If [HayAlb, !Ref TargetGroupFullName, 'sin-target-group']
+          Replica: !If [HayReplica, !Ref DbReplicaId, 'sin-replica']
+
+Outputs:
+  WebAclArn:
+    Description: Ponlo en la anotacion alb.ingress.kubernetes.io/wafv2-acl-arn del Ingress (k8s/deployment.yaml).
+    Value: !GetAtt WebAcl.Arn
+  AlarmasTopicArn:
+    Description: Tema SNS de las alarmas por capa.
+    Value: !Ref AlarmasTopic
+  TableroURL:
+    Description: Tablero de salud por capa en CloudWatch.
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/URPOnline-fase3-capas'

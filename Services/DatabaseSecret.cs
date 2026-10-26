@@ -23,4 +23,11 @@ public static class DatabaseSecret {
   if (json.RootElement.TryGetProperty("username", out var user)) builder.Username = user.GetString();
   return builder.ConnectionString;
  }
+ // Fase 3 (B3): conexion de LECTURA. Si hay ConnectionStrings:PostgresLectura (endpoint de la replica de RDS),
+ // se usa con la misma contrasena de Secrets Manager (la replica comparte usuarios con el primario).
+ // Si no hay replica, se lee del primario: la tienda funciona igual con o sin ella.
+ public static string BuildReadConnectionString(IConfiguration config, string primaryConnectionString) {
+  var lectura = config.GetConnectionString("PostgresLectura");
+  return string.IsNullOrWhiteSpace(lectura) ? primaryConnectionString : BuildConnectionString(config, lectura);
+ }
 }

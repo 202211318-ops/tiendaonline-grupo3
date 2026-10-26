@@ -13,6 +13,9 @@ var db=builder.Configuration.GetConnectionString("Postgres")?? throw new Invalid
 // En AWS la contraseña de RDS se lee de Secrets Manager (AWS SDK); en tu PC se usa appsettings.json.
 db=DatabaseSecret.BuildConnectionString(builder.Configuration,db);
 builder.Services.AddDbContext<ShopDbContext>(o=>o.UseNpgsql(db));
+// Fase 3 (B3): el catalogo lee de la replica de RDS (PostgresLectura); sin replica, del primario.
+builder.Services.AddDbContext<ShopReadDbContext>(o=>o.UseNpgsql(DatabaseSecret.BuildReadConnectionString(builder.Configuration,db))
+ .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
 var redis=builder.Configuration.GetConnectionString("Redis");
 if(!string.IsNullOrWhiteSpace(redis)) builder.Services.AddStackExchangeRedisCache(o=>o.Configuration=redis);
 else if(builder.Environment.IsDevelopment()) builder.Services.AddDistributedMemoryCache();

@@ -1,0 +1,46 @@
+# Fase 3 (F5) - El subagente de Kubernetes del agente de operaciones: SOLO LECTURA.
+# Puede ver pods, despliegues, eventos, nodos, HPA y logs; no puede crear, cambiar ni borrar nada.
+# Prueba en vivo (debe responder "no"):
+#   kubectl auth can-i delete pods -n urponline --as=system:serviceaccount:urponline:agente-operaciones
+#   kubectl auth can-i list pods   -n urponline --as=system:serviceaccount:urponline:agente-operaciones   (-> yes)
+# Toda accion que cambia el cluster la propone el agente y la ejecuta el pipeline tras la aprobacion de una persona.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agente-operaciones
+  namespace: urponline
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agente-solo-lectura
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints", "events", "nodes", "namespaces", "resourcequotas"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["rollouts"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agente-solo-lectura
+subjects:
+  - kind: ServiceAccount
+    name: agente-operaciones
+    namespace: urponline
+roleRef:
+  kind: ClusterRole
+  name: agente-solo-lectura
+  apiGroup: rbac.authorization.k8s.io

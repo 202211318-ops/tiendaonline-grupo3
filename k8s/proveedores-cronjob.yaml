@@ -1,0 +1,43 @@
+# Fase 3 (F1) - La importacion de proveedores corre SOLA en el cluster, sin que nadie la lance a mano.
+# Cada hora lee el CSV del proveedor desde S3 y actualiza el catalogo en RDS (Worker/Program.cs).
+# Cada corrida queda registrada en la tabla SupplierImports (aceptados y rechazados).
+# Reemplaza antes de aplicar:
+#   <ECR_WORKER_IMAGE>  Output EcrWorkerRepoUri de urponline-fase3 + :v1 (docker build -f Worker/Dockerfile .)
+#   <SUPPLIER_BUCKET>   Output S3SupplierBucket de URPOnlineLab (ahi el proveedor deja suppliers/products.csv)
+# Permisos: rol IAM del ServiceAccount 'proveedores' (IRSA, k8s/eksctl-cluster.yaml): leer ese bucket y el
+# secreto de RDS. La conexion sale del ConfigMap urponline-config (k8s/deployment.yaml): escribe en el PRIMARIO.
+# Probarlo sin esperar la hora:
+#   kubectl -n urponline create job --from=cronjob/proveedores proveedores-ahora
+#   kubectl -n urponline logs job/proveedores-ahora          (-> Imported=..., Rejected=...)
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: proveedores
+  namespace: urponline
+spec:
+  schedule: "0 * * * *"              # cada hora en punto (UTC)
+  concurrencyPolicy: Forbid          # una importacion a la vez
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2                # si falla (RDS en failover, S3 no responde) reintenta dos veces
+      template:
+        spec:
+          serviceAccountName: proveedores
+          restartPolicy: Never
+          containers:
+            - name: importador
+              image: <ECR_WORKER_IMAGE>
+              args: ["--source", "s3", "--bucket", "<SUPPLIER_BUCKET>", "--key", "suppliers/products.csv"]
+              env:
+                - name: ConnectionStrings__Postgres
+                  valueFrom: { configMapKeyRef: { name: urponline-config, key: ConnectionStrings__Postgres } }
+                - name: Database__SecretArn
+                  valueFrom: { configMapKeyRef: { name: urponline-config, key: Database__SecretArn } }
+                - name: AWS_REGION
+                  valueFrom: { configMapKeyRef: { name: urponline-config, key: AWS__Region } }
+              resources:
+                requests: { cpu: "250m", memory: "256Mi" }
+                limits:   { cpu: "500m", memory: "512Mi" }

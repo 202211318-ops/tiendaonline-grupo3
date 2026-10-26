@@ -4,7 +4,7 @@ using TiendaOnline.Data;
 using TiendaOnline.Models;
 using TiendaOnline.Services;
 namespace TiendaOnline.Controllers;
-public class HomeController(ShopDbContext db,BusinessEvents events,EmbeddingService embeddings,ProductVectorStore vectors,
+public class HomeController(ShopReadDbContext db,BusinessEvents events,EmbeddingService embeddings,ProductVectorStore vectors,
   IConfiguration config,ILogger<HomeController> log) : Controller {
  public async Task<IActionResult> Index(string? category,string? q,string? sort,decimal? min,decimal? max,bool stock,CancellationToken ct) {
   var vm=new StorePageViewModel{Query=q?.Trim(),Category=category,Sort=sort ?? "relevancia",Min=min,Max=max,InStockOnly=stock};

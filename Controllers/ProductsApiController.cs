@@ -8,7 +8,7 @@ public record ProductDto(int Id,string Name,string Description,decimal Price,int
 
 [ApiController]
 [Route("api/v1/products")]
-public class ProductsApiController(ShopDbContext db) : ControllerBase {
+public class ProductsApiController(ShopReadDbContext db) : ControllerBase {
  [HttpGet]
  public async Task<ActionResult<IReadOnlyList<ProductDto>>> List(string? category,string? q,CancellationToken ct) {
   var products=db.Products.AsNoTracking().AsQueryable();

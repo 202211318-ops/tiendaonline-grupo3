@@ -20,6 +20,15 @@
           "AWSSDK.Core": "[3.7.400.6, 4.0.0)"
         }
       },
+      "AWSSDK.SecretsManager": {
+        "type": "Direct",
+        "requested": "[3.7.400.35, )",
+        "resolved": "3.7.400.35",
+        "contentHash": "9XQTQUJk2wpUkMcUhB3RE8IA53ZnCKKu/moMheIWon5ZmkTI1ZBJrKPz2XCRbdxxME1Es6IYk63iPXRHIyYMig==",
+        "dependencies": {
+          "AWSSDK.Core": "[3.7.400.35, 4.0.0)"
+        }
+      },
       "Npgsql": {
         "type": "Direct",
         "requested": "[8.0.5, )",
@@ -31,8 +40,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "3.7.400.6",
-        "contentHash": "njy8/xeyeQTSRWxXPkOSnedqf4dkXV2MEOPespul8AOhEBCkJTW/E65Wkh8q2PgqCXKeWMa30E+EpU93jg4DIg=="
+        "resolved": "3.7.400.35",
+        "contentHash": "doI5+qqZWfy2m0DlpWy7hnkTJKYMX7Oc3e++zM6nMNVUrWLy6xuKYw0uhuVw2uUpWcf16e4mgsJili1Y7/FVNA=="
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "Transitive",
