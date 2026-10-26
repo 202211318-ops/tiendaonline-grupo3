@@ -1,0 +1,8 @@
+# Para Worker/Dockerfile (BuildKit usa este archivo en lugar del .dockerignore de la raiz, que excluye Worker/).
+# Solo entran el importador y la configuracion de NuGet.
+**
+!nuget.config
+!Directory.Build.props
+!Worker/
+Worker/bin/
+Worker/obj/
