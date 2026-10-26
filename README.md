@@ -32,6 +32,8 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: sábado 21 de noviembre de 2026** · participan **todos** los integrantes · **todo en vivo**
 
+> 🎯 **Objetivo:** que los alumnos construyan un **portafolio de proyectos con experiencias y casos reales** que les permita usarlo en **entrevistas y evaluaciones de trabajo**.
+
 ## 📖 El caso
 
 ### De tienda en línea a startup regional
@@ -102,6 +104,8 @@ Los inversionistas, los auditores y los reguladores del mercado de valores no co
 El grupo es el **equipo de plataforma** que el directorio contrató para que el próximo Cyber Day salga bien, para enfrentar a Thanos y para presentarle evidencia a los inversionistas. Construye esa evidencia sobre la plataforma de las fases 1 y 2, con **Docker y Kubernetes (EKS sobre Fargate)**, **balanceo de carga en la web, en la capa de negocio y en la base de datos (RDS con réplica)**, **monitoreo con recuperación automática**, **seguridad en cada capa**, **Machine Learning en CPU** y **agentes de IA**, todo desplegado con CloudFormation.
 
 **Cada falla y cada ataque se provocan en vivo, contra la propia infraestructura del grupo, y se ven en el monitoreo.** EKS, las réplicas y los servicios de seguridad **cobran por hora**: se crean, se prueban, se borran y se recrean para la presentación.
+
+**Lo que se llevan.** Esto no es un ejercicio de aula: es lo que hace un **equipo de plataforma y seguridad real** cuando una empresa crece, levanta capital y se prepara para salir a bolsa. El grupo que lo logre sale con un **portafolio que puede mostrar en una entrevista de trabajo**: una plataforma que aguanta caídas, que se defiende de un agente de IA y que se explica con evidencia.
 
 **38 desafíos en 6 bloques, todo o nada por bloque.** Cada desafío se construye, se demuestra en vivo y se explica. El profesor elige a qué integrante preguntar; si un desafío falla o no se sabe explicar, su bloque vale 0. Video obligatorio el día anterior, con todos los integrantes y la cámara encendida.
 
