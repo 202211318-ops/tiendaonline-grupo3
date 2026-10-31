@@ -26,7 +26,7 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ---
 
-# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 39 DESAFÍOS (20 PUNTOS) + 15 DE HONORES (SUNAT)
+# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 39 DESAFÍOS (20 PUNTOS) + 16 DE HONORES (SUNAT)
 
 ## ➡️ [Descargar la rúbrica: `RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx)
 
@@ -141,7 +141,7 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 | E. Capacidad y costo anticipados con Machine Learning | 27 a 32 | 3 |
 | F. La cadena de valor con IA agéntica, gobernada | 33 a 39 | 4 |
 | **Total** | **39** | **20** |
-| **G. Facturación electrónica con SUNAT y seguridad bancaria** | 40 a 54 | **Honores** |
+| **G. Facturación electrónica con SUNAT y seguridad bancaria** | 40 a 55 | **Honores** |
 
 > **Bloque G — Honores.** El grupo que lo supera completo, en vivo y explicado, **aprueba el curso con honores**: es el nivel de un equipo que trabaja en el core de un banco.
 
@@ -251,6 +251,7 @@ Se trabaja contra el **servicio beta de SUNAT** (`https://e-beta.sunat.gob.pe/ol
 52. **G13. Pista de auditoría y trazabilidad.** Auditoría de negocio **solo de inserción** (quién emitió, aprobó y envió cada comprobante, y cuándo), con copia sellada en S3 con Object Lock y la auditoría nativa del motor activada. Un **id de correlación** sigue la venta desde la app hasta la CDR; los logs van a CloudWatch cifrados y **sin montos ni cuentas en claro**. *En vivo:* con el id de correlación se reconstruye el recorrido completo de una venta; un UPDATE sobre la auditoría falla. *Explicar:* por qué la pista de auditoría no puede vivir solo en la misma base que audita.
 53. **G14. Antifraude y antilavado, y la velocidad medida.** Antes de sellar y enviar, reglas de monto, frecuencia, horario atípico, **fraccionamiento** (muchas ventas pequeñas que suman un monto alto) y cuenta de destino nueva; lo marcado queda **retenido** para el oficial de cumplimiento y su decisión queda como caso en la auditoría. Además, un **ADR con números**: latencia p95 y bytes por venta de JSON-RPC + MessagePack frente a REST y gRPC con la misma venta. *En vivo:* el profesor dispara cada regla y la venta queda retenida con su motivo. *Explicar:* por qué eligieron un canal binario sobre TCP y qué perdieron frente a gRPC.
 54. **G15. Consenso Raft implementado a mano.** El registro de comprobantes del sistema contable **no puede depender de un solo nodo**: corre en **tres nodos, uno por zona**, y el grupo **implementa Raft desde cero** (sin etcd, sin bibliotecas de consenso): elección de líder con plazos aleatorios, replicación del log, confirmación por **mayoría** y persistencia del término y del voto antes de responder. **Solo el líder envía a SUNAT**, y un comprobante se envía solo cuando su entrada está confirmada por la mayoría. Los nodos se hablan por el mismo canal JSON-RPC + MessagePack con TLS mutuo. *En vivo:* con ventas entrando, (1) se apaga el líder y se elige otro sin perder ni duplicar comprobantes; (2) una regla de la NACL **aísla un nodo** (partición) y el nodo aislado no puede confirmar nada ni enviar a SUNAT; (3) al volver, se pone al día con el log del líder. *Explicar:* por qué hace falta mayoría y no basta con dos nodos, qué pasaría si dos nodos se creyeran líderes a la vez, y qué garantiza el término de Raft.
+55. **G16. El probador de Raft: cientos de fallas al azar y su dataset.** El grupo escribe un **probador automático** que corre su Raft (G15) **cientos de veces** con una **semilla reproducible**, y en cada corrida provoca al azar caídas del líder y de seguidores, reinicios, **particiones** (mayoría y minoría, que se curan y se vuelven a partir), mensajes perdidos, duplicados, demorados y desordenados, mientras entran ventas. Cada corrida guarda su **historial de operaciones** (quién pidió qué, cuándo empezó, cuándo respondió y qué devolvió) y los eventos de falla: ese es el **dataset de corridas**. Un **verificador** recorre el dataset y comprueba en cada corrida que: nunca hubo **dos líderes en el mismo término**, ninguna entrada confirmada se perdió ni cambió (**seguridad del log**), **ningún comprobante se envió dos veces ni dejó de enviarse** a SUNAT, y el historial es **linealizable** (se puede ordenar como si un solo nodo hubiera atendido todo). *En vivo:* el profesor da una **semilla nueva** y el número de corridas; el probador corre, el verificador reporta cuántas pasaron, y cualquier corrida que falle **se reproduce exacta con su semilla**. *Explicar:* qué falla encontró el probador que no habrían encontrado a mano, por qué la semilla es lo que vuelve útil una falla, y qué significa que un historial sea linealizable.
 
 ---
 
@@ -957,7 +958,7 @@ El canal es **único para todo el curso** (el del repositorio principal): ahí s
 
 ## 👉 Empieza aquí
 
-1. **Prepara tu equipo:** [CONFIGURACION_VSCODE.md](CONFIGURACION_VSCODE.md) — qué instalar y configurar (VS Code, .NET 8, AWS CLI, extensiones).
+1. **Prepara tu equipo:** [CONFIGURACION_VSCODE.md](CONFIGURACION_VSCODE.md) — qué instalar y configurar (VS Code, .NET 10, AWS CLI, extensiones).
 2. **Sigue la ruta del curso en orden:** carpeta [`RUTA_DEL_CURSO/`](RUTA_DEL_CURSO/) — abre primero `URPOnline_INICIO_AQUI.docx`.
 
 | Paso | Carpeta | Contenido |
@@ -1524,7 +1525,7 @@ Las mismas definiciones del balotario y del examen. Si un término no está aqu�
 | **HTTP / HTTPS / TLS** | Protocolo web / web cifrado con TLS (certificado). | La tienda se abre con https:// en CloudFront. |
 | **DNS / CNAME** | Sistema que traduce nombres a direcciones / registro que apunta un nombre a otro. | Registros de Route 53. |
 | **Nginx / proxy inverso** | Servidor que recibe las peticiones y las reenvía a la aplicación. | Nginx en el 80 reenvía a 127.0.0.1:8080. |
-| **Kestrel / ASP.NET Core / .NET 8** | Servidor web de .NET / framework web / plataforma de la aplicación. | La tienda URPOnline. |
+| **Kestrel / ASP.NET Core / .NET 10** | Servidor web de .NET / framework web / plataforma de la aplicación. | La tienda URPOnline. |
 | **127.0.0.1** | Dirección de la propia máquina (solo accesible desde dentro). | Kestrel escucha en 127.0.0.1:8080. |
 | **Health check / healthy / unhealthy** | Prueba periódica de salud de una instancia / sana / no sana. | El Target Group revisa la ruta /health. |
 | **502 Bad Gateway** | Error HTTP: el proxy no pudo comunicarse con el servidor de atrás. | Error que devuelve Nginx. |
@@ -1581,7 +1582,7 @@ Las mismas definiciones del balotario y del examen. Si un término no está aqu�
 
 ## 🚀 Descargar y correr la tienda en tu equipo
 
-Requisitos: **.NET 8 SDK**, **Docker Desktop** abierto y **Git**. Cómo instalarlos: [CONFIGURACION_VSCODE.md](CONFIGURACION_VSCODE.md).
+Requisitos: **.NET 10 SDK**, **Docker Desktop** abierto y **Git**. Cómo instalarlos: [CONFIGURACION_VSCODE.md](CONFIGURACION_VSCODE.md).
 
 ```powershell
 # 1. Descargar el proyecto
@@ -1731,7 +1732,7 @@ Otro día: `docker start urp-postgres urp-redis` y `dotnet run --urls http://loc
 # URPOnline v2 — tienda C# + analítica + promociones + Worker AWS SDK
 
 ## Ejecutar localmente (sin Docker)
-- Requiere .NET SDK 8, PostgreSQL y Redis (servicios instalados y ejecutándose).
+- Requiere .NET SDK 10, PostgreSQL y Redis (servicios instalados y ejecutándose).
 - Crear base PostgreSQL `urponline` y usuario local.
 - Configurar variables: `ConnectionStrings__Postgres`, `ConnectionStrings__Redis`, `InitializeDatabase=true` SOLO para instalación inicial.
 - Ejecutar `dotnet restore` y `dotnet run --urls http://localhost:8080`.
