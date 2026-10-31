@@ -4,7 +4,7 @@
 # o se monta/baja en el arranque; no se versiona en git por su tamano.
 
 # ---------- build ----------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY TiendaOnline.csproj .
 RUN dotnet restore TiendaOnline.csproj
@@ -12,7 +12,7 @@ COPY . .
 RUN dotnet publish TiendaOnline.csproj -c Release -o /app --no-restore
 
 # ---------- runtime ----------
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 # Usuario no root (buena practica de seguridad): las imagenes .NET 8 ya traen el usuario 'app' (UID $APP_UID).
 COPY --from=build --chown=$APP_UID /app .

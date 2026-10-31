@@ -166,7 +166,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'urponline-agentes-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Agentes::URPOnline.Agentes.Handler::Procesar
       Role: !GetAtt LambdaRole.Arn
       Timeout: 120                      # < VisibilityTimeout de la cola
@@ -197,7 +197,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'urponline-agentes-programados-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Agentes::URPOnline.Agentes.Handler::Programado
       Role: !GetAtt LambdaRole.Arn
       Timeout: 600                      # el agente de stock recorre varios productos

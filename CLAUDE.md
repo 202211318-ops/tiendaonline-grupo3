@@ -6,7 +6,7 @@
 - No generar código ficticio, mocks silenciosos en producción, pruebas falsas, capturas inventadas o servicios AWS declarados pero no usados.
 
 ## Arquitectura y diseño
-- C# .NET 8, ASP.NET Core MVC + Razor, código asíncrono con `CancellationToken` en I/O. Capas Domain → Application → Infrastructure/Web; dependencias apuntan hacia adentro, infraestructura implementa interfaces de Application.
+- C# .NET 10, ASP.NET Core MVC + Razor, código asíncrono con `CancellationToken` en I/O. Capas Domain → Application → Infrastructure/Web; dependencias apuntan hacia adentro, infraestructura implementa interfaces de Application.
 - Domain sin dependencia de EF Core, AWS SDK, HTTP, Redis ni UI. Modelar invariantes y políticas en dominio; no controladores con lógica de negocio.
 - DTO separados de entidades; validaciones de entrada; servicios DI scoped/transient/singleton correctamente; errores tipados, `ProblemDetails` para API y vista amigable para MVC.
 - PostgreSQL como fuente de verdad de pedidos, pagos, inventario; Redis solo estado efímero/sesión/caché. No usar Redis como contabilidad ni asumir transacciones distribuidas.

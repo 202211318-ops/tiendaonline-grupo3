@@ -67,7 +67,7 @@ builder.Services.AddScoped<TiendaOnline.Services.Comida.SoporteDelivery>();
 builder.Services.AddScoped<TiendaOnline.Services.Comida.ComidaSeeder>();
 var app=builder.Build();
 if(!app.Environment.IsDevelopment()){app.UseExceptionHandler("/Home/Error");app.UseHsts();}
-app.UseForwardedHeaders(new ForwardedHeadersOptions {ForwardedHeaders=ForwardedHeaders.XForwardedFor|ForwardedHeaders.XForwardedProto,KnownNetworks={ },KnownProxies={ }});
+app.UseForwardedHeaders(new ForwardedHeadersOptions {ForwardedHeaders=ForwardedHeaders.XForwardedFor|ForwardedHeaders.XForwardedProto,KnownIPNetworks={ },KnownProxies={ }});
 app.UseStaticFiles();app.UseRouting();app.UseSession();
 app.MapGet("/health",()=>Results.Ok(new{status="ok"}));
 app.MapControllerRoute("default","{controller=Home}/{action=Index}/{id?}");

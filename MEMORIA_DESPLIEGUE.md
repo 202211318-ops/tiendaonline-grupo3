@@ -46,7 +46,7 @@ Ninguna EC2 tiene SSH abierto. Para entrar a una instancia se usa **SSM Session 
 | Herramienta | Versión | Comprobar |
 |---|---|---|
 | Git | cualquiera reciente | `git --version` |
-| .NET SDK | **8** o superior (el proyecto es `net8.0`) | `dotnet --version` |
+| .NET SDK | **10** o superior (el proyecto es `net10.0`) | `dotnet --version` |
 | Runtime ASP.NET Core 8 | para ejecutar en local | `dotnet --list-runtimes` |
 | AWS CLI | v2 | `aws --version` |
 | Cuenta AWS | con permisos para crear VPC, EC2, RDS, ElastiCache, IAM, S3 y CloudFormation | — |
@@ -56,7 +56,7 @@ Instalación en Windows:
 
 ```powershell
 winget install Git.Git
-winget install Microsoft.DotNet.SDK.8
+winget install Microsoft.DotNet.SDK.10
 winget install Amazon.AWSCLI
 ```
 

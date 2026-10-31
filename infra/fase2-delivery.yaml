@@ -237,7 +237,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-recibir-pedido-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::RecibirPedido
       Role: !GetAtt LambdaRole.Arn
       Timeout: 15
@@ -267,7 +267,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-consultas-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::Consultas
       Role: !GetAtt LambdaRole.Arn
       Timeout: 15
@@ -297,7 +297,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-aceptar-pedido-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::AceptarPedido
       Role: !GetAtt LambdaRole.Arn
       Timeout: 15
@@ -327,7 +327,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-sincronizar-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::Sincronizar
       Role: !GetAtt LambdaRole.Arn
       Timeout: 15
@@ -357,7 +357,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-ofrecer-pedido-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::OfrecerPedido
       Role: !GetAtt LambdaRole.Arn
       Timeout: 30
@@ -387,7 +387,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-reofrecer-pedido-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::ReofrecerPedido
       Role: !GetAtt LambdaRole.Arn
       Timeout: 30
@@ -417,7 +417,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-actualizar-entrega-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::ActualizarEntrega
       Role: !GetAtt LambdaRole.Arn
       Timeout: 30
@@ -447,7 +447,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-registrar-posicion-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::RegistrarPosicion
       Role: !GetAtt LambdaRole.Arn
       Timeout: 30
@@ -477,7 +477,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-conexion-ws-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::ConexionWs
       Role: !GetAtt LambdaRole.Arn
       Timeout: 15
@@ -507,7 +507,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub 'delivery-simulador-${AWS::StackName}'
-      Runtime: dotnet8
+      Runtime: dotnet10
       Handler: URPOnline.Delivery::URPOnline.Delivery.Funciones::Simulador
       Role: !GetAtt LambdaRole.Arn
       Timeout: 900                       # una corrida del simulador dura minutos

@@ -2,7 +2,7 @@
   <!-- Lambdas de la BASE de URPOnline Delivery (fase 2, FASE2_ESPECIFICACION.md §9.9.2). Un solo ZIP; cada funcion
        de infra/fase2-delivery.yaml apunta a un metodo de Funciones. Independiente de la tienda: paquete liviano. -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>URPOnline.Delivery</AssemblyName>
@@ -19,7 +19,7 @@
     <PackageReference Include="AWSSDK.EventBridge" Version="3.7.401" />
     <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.400.35" />
     <PackageReference Include="AWSSDK.ApiGatewayManagementApi" Version="3.7.400.35" />
-    <PackageReference Include="Npgsql" Version="8.0.6" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.0.1" />
   </ItemGroup>

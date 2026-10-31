@@ -13,7 +13,7 @@ Todo lo que necesitas **instalar y configurar** en tu equipo antes de trabajar c
 |---|---|---|---|---|
 | 1 | **Visual Studio Code** | Sí | `winget install Microsoft.VisualStudioCode` | `code --version` |
 | 2 | **Git** | Sí | `winget install Git.Git` | `git --version` |
-| 3 | **.NET 8 SDK** | Sí | `winget install Microsoft.DotNet.SDK.8` | `dotnet --list-sdks` (debe aparecer `8.x`) |
+| 3 | **.NET 10 SDK** | Sí | `winget install Microsoft.DotNet.SDK.10` | `dotnet --list-sdks` (debe aparecer `10.x`) |
 | 4 | **AWS CLI v2** | Sí | `winget install Amazon.AWSCLI` | `aws --version` |
 | 5 | **Session Manager plugin** | Recomendado | `winget install Amazon.SessionManagerPlugin` | `session-manager-plugin` |
 | 6 | **Python 3** + **cfn-lint** | Recomendado | `winget install Python.Python.3.12` y luego `pip install cfn-lint` | `cfn-lint --version` |
@@ -23,7 +23,7 @@ Todo lo que necesitas **instalar y configurar** en tu equipo antes de trabajar c
 | 10 | **Modelo de embeddings** | Sí, para la búsqueda semántica | `scripts/descargar-modelo.ps1` (sección 3.7) | existe `ml-models/paraphrase-multilingual-MiniLM-L12-v2/model.onnx` |
 
 > ¿Para qué sirve cada uno?
-> - **.NET 8 SDK**: compila y ejecuta la tienda. Si tienes una versión más nueva (9 o 10), también compila proyectos `net8.0`, pero para **ejecutarlos** en local necesitas el runtime 8, que viene incluido con el SDK 8.
+> - **.NET 10 SDK**: compila y ejecuta la tienda (`net10.0`). La fase 3 usa .NET 10 porque trae nativos ML-KEM y ML-DSA (criptografía post-cuántica) para el Bloque G.
 > - **AWS CLI**: sube el ZIP a S3 y crea la pila de CloudFormation desde la terminal.
 > - **Session Manager plugin**: permite entrar a las EC2 privadas desde tu terminal con `aws ssm start-session`. Sin él, puedes entrar igual desde la consola web (EC2 → Connect → Session Manager).
 > - **cfn-lint**: revisa la plantilla de CloudFormation antes de desplegarla y te avisa de errores sin gastar dinero.
@@ -200,7 +200,7 @@ Si `dotnet build` termina con **Build succeeded**, ya puedes seguir con [MEMORIA
 | `aws`, `dotnet` o `git` "no se reconoce como comando" | Cierra y vuelve a abrir VS Code (o la terminal) después de instalar |
 | `aws sts get-caller-identity` → *Unable to locate credentials* | Falta `aws configure` o `aws configure sso` |
 | `... the SSO session has expired` | `aws sso login` |
-| `dotnet run` → *framework 'Microsoft.AspNetCore.App' version 8.0.0 not found* | Instala el SDK 8: `winget install Microsoft.DotNet.SDK.8` |
+| `dotnet run` → *framework 'Microsoft.AspNetCore.App' version 10.0.0 not found* | Instala el SDK 10: `winget install Microsoft.DotNet.SDK.10` |
 | La plantilla YAML aparece llena de errores rojos en `!Ref` | Instala la extensión YAML de Red Hat y abre la **carpeta** del proyecto (no el archivo suelto), para que se aplique `.vscode/settings.json` |
 | `cfn-lint` no se encuentra después de `pip install` | Reabre la terminal; si sigue igual, usa `python -m cfnlint ...` |
 | C# Dev Kit pide iniciar sesión | Es una cuenta Microsoft gratuita (uso educativo/individual) |
@@ -217,7 +217,7 @@ Si `dotnet build` termina con **Build succeeded**, ya puedes seguir con [MEMORIA
 |---|---|---|
 | VS Code | `brew install --cask visual-studio-code` | paquete `.deb` desde code.visualstudio.com |
 | Git | `brew install git` | `sudo apt install git` |
-| .NET 8 SDK | `brew install --cask dotnet-sdk@8` | `sudo apt install dotnet-sdk-8.0` |
+| .NET 10 SDK | `brew install --cask dotnet-sdk` | `sudo apt install dotnet-sdk-10.0` |
 | AWS CLI v2 | `brew install awscli` | instalador oficial: docs.aws.amazon.com/cli |
 | Session Manager plugin | `brew install --cask session-manager-plugin` | paquete `.deb` oficial de AWS |
 | cfn-lint | `pip3 install cfn-lint` | `pip3 install cfn-lint` |

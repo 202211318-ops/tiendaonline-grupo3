@@ -44,7 +44,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Compilar y empaquetar las Lambdas (solo Linux, para no pasar los 250 MB de Lambda)
         run: |
