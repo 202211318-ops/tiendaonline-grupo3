@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Fase 3, Bloque G: sistema contable de URPOnline (Facade + Gateway a SUNAT).
+       .NET 10: trae nativos ML-KEM y ML-DSA para el desafio G3. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>URPOnline.Contable</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- JSON-RPC sobre cualquier Stream (TCP, SslStream) con LengthHeaderMessageHandler y MessagePackFormatter. -->
+    <PackageReference Include="StreamJsonRpc" Version="2.26.150" />
+    <!-- SignedXml (firma XMLDSig del comprobante): viene con ASP.NET Core, no con una app de consola. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.14" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

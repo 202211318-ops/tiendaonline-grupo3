@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
-  <ItemGroup><Compile Remove="Worker/**/*.cs" /><Compile Remove="tests/**" /><Compile Remove="lambdas/**" /><Compile Remove="lambdas-delivery/**" /><Compile Remove="mobile-delivery/**" /><Compile Remove="emulador/**" /><Content Remove="tests/**;lambdas/**;lambdas-delivery/**;mobile-delivery/**;emulador/**" /><None Remove="tests/**;lambdas/**;lambdas-delivery/**;mobile-delivery/**;emulador/**" /></ItemGroup>
+  <ItemGroup><Compile Remove="Worker/**/*.cs" /><Compile Remove="tests/**" /><Compile Remove="lambdas/**" /><Compile Remove="lambdas-delivery/**" /><Compile Remove="mobile-delivery/**" /><Compile Remove="emulador/**" /><Compile Remove="contable/**" /><Content Remove="tests/**;lambdas/**;lambdas-delivery/**;mobile-delivery/**;emulador/**;contable/**" /><None Remove="tests/**;lambdas/**;lambdas-delivery/**;mobile-delivery/**;emulador/**;contable/**" /></ItemGroup>
   <!-- Modelo de embeddings (no está en git: se descarga con scripts/descargar-modelo.ps1). Se incluye en dotnet publish para EC2. -->
   <ItemGroup><None Include="ml-models/**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
   <!-- Catalogo del Motor de IA (se copia al publicar; la key NO va aqui, va en Secrets Manager). -->

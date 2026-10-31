@@ -16,5 +16,6 @@
     <ProjectReference Include="..\TiendaOnline.csproj" />
     <ProjectReference Include="..\lambdas\URPOnline.Agentes.csproj" />
     <ProjectReference Include="..\lambdas-delivery\URPOnline.Delivery.csproj" />
+    <ProjectReference Include="..\contable\URPOnline.Contable.csproj" />
   </ItemGroup>
 </Project>

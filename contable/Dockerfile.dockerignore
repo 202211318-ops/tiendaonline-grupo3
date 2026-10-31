@@ -1,0 +1,8 @@
+# Para contable/Dockerfile (BuildKit usa este archivo en lugar del .dockerignore de la raiz).
+# Solo entran el sistema contable y la configuracion de NuGet.
+**
+!nuget.config
+!Directory.Build.props
+!contable/
+contable/bin/
+contable/obj/
