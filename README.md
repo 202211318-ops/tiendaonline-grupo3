@@ -26,7 +26,7 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ---
 
-# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 39 DESAFÍOS (20 PUNTOS)
+# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 39 DESAFÍOS (20 PUNTOS) + 14 DE HONORES (SUNAT)
 
 ## ➡️ [Descargar la rúbrica: `RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx)
 
@@ -54,6 +54,23 @@ El informe de inteligencia que recibió el directorio dice que Thanos usa **desc
 El directorio no lo tomó como ciencia ficción. En septiembre de 2026 se hizo público que **un agente de IA de OpenAI entró, sin que nadie se lo ordenara, a partes no públicas del portal de estadísticas de Medicare del gobierno de Australia**, y que agentes de la misma empresa se saltaron controles de seguridad de decenas de sitios más; en uno de ellos pasaron casi una semana intentando extraer datos de salud ([CNBC](https://www.cnbc.com/2026/09/24/openai-agent-hacked-australian-government-website-.html), [ABC](https://www.abc.net.au/news/2026-09-26/openai-review-rogue-agents-australia-medicare-hack/107199074)). **No rompieron ningún cifrado**: aprovecharon que el sitio entregaba lo que no debía a quien lo pidiera, con la paciencia de una máquina que no se cansa. Y el descifrado cuántico se acerca más rápido de lo que se creía. Ya se factorizaron con equipos cuánticos números pequeños de prueba de RSA (de 22 y 48 bits), y en 2023 investigadores de Tsinghua combinaron el algoritmo de Schnorr con optimización cuántica (QAOA). En marzo de 2026 se publicó el **algoritmo JVG**, que proyecta romper RSA-2048 con **menos de 5 000 cúbits en unas 11 horas**, frente a los ~20 millones de cúbits que estimaban los trabajos anteriores ([SecurityWeek](https://www.securityweek.com/quantum-decryption-of-rsa-is-much-closer-than-expected/), [MDPI](https://www.mdpi.com/2624-800X/6/2/71)). Esa cifra todavía es una **extrapolación** de simulaciones con números pequeños y no tiene verificación independiente ([PostQuantum.com](https://postquantum.com/security-pqc/cybersecurity-apocalypse-in-2026-jvg/)), pero la dirección es clara: lo que hoy se cifra con RSA o curvas elípticas puede quedar expuesto antes de lo previsto.
 
 El directorio fue claro: con capital de inversión y la intención de salir a bolsa, **esto no puede volver a pasar**, y pidió al equipo de plataforma **un plan para enfrentar a Thanos**, sustentado con la arquitectura real de URPOnline.
+
+### El ultimátum de SUNAT
+URPOnline ha crecido vertiginosamente y se ha convertido en el tipo de empresa **gran contribuyente**, y **SUNAT, en una auditoría, le ha dado un ultimátum para que implemente la facturación electrónica; de lo contrario, le cierra el negocio.**
+
+**SUNAT pone los servicios.** Si URPOnline no logra la integración en la fecha límite, **SUNAT cierra el negocio y le pone una multa estratosférica por incumplimiento normativo, además de abrirle un proceso sancionador.**
+
+URPOnline ha desarrollado un **modelo de sistema contable** para integrarse con SUNAT, pero **quiere mantener la seguridad perimetral que ya había conseguido** frente a Thanos y **quiere el máximo nivel de seguridad**. Cada venta sale de la tienda hacia el sistema contable, y del sistema contable hacia SUNAT; en cada salida hay un **firewall con NAT**:
+
+```
+Tienda URPOnline ──JSON-RPC + MessagePack · TCP · TLS 1.3 mutuo──▶ [Firewall + NAT] ──▶ Sistema contable (Facade + Gateway)
+Sistema contable ──SOAP · HTTPS · WS-Security──▶ [Firewall + NAT] ──▶ SUNAT (billService)
+```
+
+- **Entre la tienda y el sistema contable**, el canal es **binario sobre TCP**, por **velocidad y flexibilidad**: JSON-RPC con MessagePack, TLS 1.3 con certificados de los dos lados, y además el mensaje cifrado y firmado con el cifrado más alto disponible (AES-256-GCM, ML-KEM-1024, ML-DSA-87, SHA-512).
+- **Entre el sistema contable y SUNAT**, se usa lo que SUNAT exige: el servicio web SOAP `billService`, con WS-Security *UsernameToken* (RUC + usuario SOL y clave SOL) y el comprobante en XML UBL 2.1 firmado con el certificado digital del emisor ([Manual del Programador SUNAT, mayo de 2021](https://cpe.sunat.gob.pe/sites/default/files/inline-files/manual_programador%20%281%29.pdf)).
+- **Las claves privadas viven en una caja HSM** que la aplicación nunca puede leer: **SoftHSM2** (open source, interfaz PKCS#11), usada desde .NET con **Pkcs11Interop**.
+- **La base de datos del sistema contable detecta su propia manipulación:** quien cambie un monto o inserte un comprobante a mano desde un cliente SQL es detectado, bloqueado y reportado en menos de un minuto.
 
 ### La visión: el primer comercio electrónico basado en IA agéntica de punta a punta
 URPOnline quiere **llegar a ser el primer comercio electrónico de Latinoamérica basado en IA agéntica de punta a punta en todos sus procesos**: que cada proceso del negocio, desde el proveedor hasta la puerta del cliente y la operación de la propia plataforma, lo mueva un agente de IA que **percibe, decide y actúa** dentro de reglas claras, con una persona supervisando lo que es de alto impacto.
@@ -100,6 +117,12 @@ Los inversionistas, los auditores y los reguladores del mercado de valores no co
 - **Agentes gobernados y auditables:** qué decidió cada agente, con qué datos, quién aprobó y cuánto tardó, en una bitácora que un auditor puede revisar.
 - **Controles y separación de funciones:** ningún agente, ningún sistema automático y ninguna persona puede cambiar la producción por su cuenta; todo cambio pasa por el pipeline y por CloudFormation.
 
+### Compromiso 5: cumplir con SUNAT sin abrir la plataforma
+- **Cada venta tiene su comprobante electrónico** aceptado por SUNAT, y el cliente ve en la app, sin recargar, si fue aceptado o rechazado.
+- **Ningún comprobante se duplica ni se pierde**, aunque se caiga el sistema contable o SUNAT no responda a tiempo.
+- **La integración no abre ninguna puerta nueva:** firewall con NAT en cada frontera, ningún servicio interno con IP pública y ninguna clave privada fuera de la caja HSM.
+- **Lo que se le envió a SUNAT no se puede alterar después** sin que el sistema lo detecte, lo bloquee y avise.
+
 ### Lo que hace el grupo
 El grupo es el **equipo de plataforma** que el directorio contrató para que el próximo Cyber Day salga bien, para enfrentar a Thanos y para presentarle evidencia a los inversionistas. Construye esa evidencia sobre la plataforma de las fases 1 y 2, con **Docker y Kubernetes (EKS sobre Fargate)**, **balanceo de carga en la web, en la capa de negocio y en la base de datos (RDS con réplica)**, **monitoreo con recuperación automática**, **seguridad en cada capa**, **Machine Learning en CPU** y **agentes de IA**, todo desplegado con CloudFormation.
 
@@ -118,6 +141,9 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 | E. Capacidad y costo anticipados con Machine Learning | 27 a 32 | 3 |
 | F. La cadena de valor con IA agéntica, gobernada | 33 a 39 | 4 |
 | **Total** | **39** | **20** |
+| **G. Facturación electrónica con SUNAT y seguridad bancaria** | 40 a 53 | **Honores** |
+
+> **Bloque G — Honores.** El grupo que lo supera completo, en vivo y explicado, **aprueba el curso con honores**: es el nivel de un equipo que trabaja en el core de un banco.
 
 ---
 
@@ -183,6 +209,47 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 37. **F5. Solo lectura y aprobación humana.** El subagente de Kubernetes tiene RBAC e IAM de solo lectura (su intento de borrar un pod se rechaza), y toda acción que cambia producción espera la aprobación de una persona. *Explicar:* por qué un agente no debe cambiar la producción por su cuenta.
 38. **F6. Bitácora auditable de los agentes.** Cada decisión de un agente queda registrada con qué hizo, con qué datos, por qué, quién aprobó y cuánto tardó (MTTR en los incidentes). *Explicar:* qué le muestra esa bitácora a un auditor antes de salir a bolsa.
 39. **F7. Explicar el código de un agente con su razonamiento.** Eligen **al menos un agente** (el de stock con ReAct, el de carrito generador-crítico, el analista, el de soporte o su agente de operaciones), encienden el **razonamiento del modelo y la traza paso a paso**, lo ejecutan en vivo y explican **su código** frente a esa traza: dónde se arma el prompt, dónde decide el modelo, dónde se llama cada herramienta y con qué datos, qué lo hace parar (`StopPolicy`: iteraciones y presupuesto de tokens) y qué bloquean los guardrails. El código está en `Services/Agents/` (`AgentLoop.cs`, `StockAgent.cs`, `CartAgent.cs`, `AnalystAgent.cs`, `SupportAgent.cs`, `Guardrails.cs`). El profesor señala una línea del código o un paso de la traza y cualquier integrante explica qué pasó y por qué. Además **plantean qué cambiarían en ese agente, o muestran qué cambiaron, y por qué**: el prompt, una herramienta, la regla de parada, un guardrail o el modelo, con la traza **de antes y de después** que prueba la mejora (menos pasos, menos tokens, una decisión correcta que antes era incorrecta). *Opcional:* reescriben ese agente con Microsoft Agent Framework y comparan las dos trazas. *Explicar:* qué decidió el modelo y qué decidió el código, qué habría pasado si el modelo se equivocaba en ese paso, y por qué su cambio lo hace mejor (o qué empeoró).
+
+### Bloque G — Facturación electrónica con SUNAT y seguridad bancaria (Honores)
+
+```mermaid
+flowchart LR
+  subgraph APP["Subred privada · tienda"]
+    T["Tienda URPOnline<br/>Hub SignalR"]
+  end
+  subgraph CONT["Subred privada · sistema contable"]
+    F["Facade contable<br/>recibe y responde (JSON-RPC)"]
+    G["Gateway SUNAT<br/>outbox · firma UBL"]
+    H["Caja HSM<br/>SoftHSM2 · PKCS#11"]
+    DB[("Comprobantes + outbox<br/>sello HMAC encadenado")]
+  end
+  FW1["Firewall + NAT<br/>SG · NACL · Network Firewall"]
+  FW2["Firewall + NAT<br/>NAT Gateway · IP fija"]
+  S["SUNAT<br/>billService (beta)"]
+  T -- "JSON-RPC + MessagePack · TCP · TLS 1.3 mutuo<br/>AES-256-GCM · ML-KEM-1024 · ML-DSA-87" --> FW1 --> F
+  F --> G
+  G --> H
+  G --> DB
+  G -- "SOAP · HTTPS · UsernameToken<br/>UBL 2.1 firmado (XMLDSig)" --> FW2 --> S
+  F -. "resultado por el MISMO socket" .-> T
+```
+
+Se trabaja contra el **servicio beta de SUNAT** (`https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService?wsdl`), que según el manual del programador «solo permite realizar pruebas de las estructuras XML» y **no exige un certificado registrado en SUNAT**; las credenciales son `[RUC]MODDATOS` / `MODDATOS`. **Nunca contra producción.** El sistema contable y la tienda corren en **.NET 10**: ML-KEM y ML-DSA vienen nativos (`System.Security.Cryptography.MLKem` y `MLDsa`).
+
+40. **G1. Canal binario tienda → sistema contable.** JSON-RPC con **StreamJsonRpc** sobre `TcpClient`/`TcpListener`, con `LengthHeaderMessageHandler` (prefijo de 4 bytes big-endian) y **MessagePack** configurado con `MessagePackSecurity.UntrustedData` y tamaño máximo de mensaje. La tienda llama `EmitirComprobanteAsync` y el sistema contable responde `NotificarResultadoAsync` **por el mismo socket**. *En vivo:* una venta sale de la tienda y su resultado vuelve por el mismo canal. *Explicar:* por qué el resultado tiene que volver por el mismo socket cuando hay un NAT en el medio.
+41. **G2. TLS 1.3 mutuo con certificados propios.** `SslStream` sobre el socket TCP, con una CA propia del curso: certificado de servidor para el sistema contable y de cliente para la tienda. Cada lado valida la cadena, el uso de clave (`serverAuth` / `clientAuth`), el nombre esperado, la vigencia y la revocación (CRL). Solo TLS 1.3. *En vivo:* un cliente sin certificado, con uno de otra CA o vencido es rechazado antes de leer un byte. *Explicar:* qué protege el TLS mutuo que no protege el TLS de un solo lado.
+42. **G3. El mensaje cifrado y firmado dentro del canal.** Cada venta viaja como `MessagePack → firma ML-DSA-87 → cifrado AES-256-GCM`, con la clave AES encapsulada con **ML-KEM-1024** hacia la clave pública del sistema contable, y SHA-512 como resumen. Se rechaza SHA-1. *En vivo:* un byte alterado hace fallar la etiqueta GCM; una firma inválida no se procesa. *Explicar:* por qué cifrar el mensaje si ya va dentro de TLS, y qué tiene que ver con «cosechar ahora, descifrar después».
+43. **G4. Firewall con NAT en cada frontera.** La tienda y el sistema contable están en **subredes distintas**; entre ellas y hacia SUNAT hay **firewall con NAT**: Security Groups, Network ACLs (entrada **y** salida, con puertos efímeros), **NAT Gateway privado** a la salida de la tienda, **NLB en TCP** a la entrada del sistema contable (443 → puerto interno, sin terminar el TLS) y **NAT Gateway público** con IP fija a la salida hacia SUNAT; **Network Firewall** solo deja salir al dominio de SUNAT. Un **keepalive** menor al tiempo de inactividad del NAT mantiene vivo el canal. Tabla de reglas: capa, origen, destino, puerto y por qué existe. *En vivo:* el sistema contable no puede salir a ningún destino distinto de SUNAT; una conexión al puerto JSON-RPC desde otro security group es rechazada. *Explicar:* el recorrido de un paquete desde la tienda hasta SUNAT, con cada traducción de dirección y cada firewall que cruza.
+44. **G5. Factura a SUNAT con `sendBill`.** El gateway arma el XML **UBL 2.1** de la factura, lo firma con XMLDSig dentro de `ext:UBLExtensions/ext:UBLExtension/ext:ExtensionContent` con el certificado del emisor, lo comprime en ZIP y lo envía a `billService` con WS-Security *UsernameToken* (RUC + usuario SOL en `Username`, clave SOL en `Password`). Lee la **constancia de recepción (CDR)** y su estado. *En vivo:* una venta de la tienda termina con su CDR. *Explicar:* qué va en la cabecera SOAP y qué va dentro del XML, y quién firma cada cosa.
+45. **G6. Boletas con resumen diario.** Las boletas se envían con `sendSummary`, que devuelve un **ticket**; un worker consulta `getStatus` hasta obtener la constancia. *En vivo:* el ticket y su constancia. *Explicar:* por qué la factura es síncrona y el resumen de boletas asíncrono.
+46. **G7. Firma fuerte adentro, firma de SUNAT en el borde.** El ejemplo del manual de SUNAT firma con `rsa-sha1`; dentro de la empresa, la venta circula y se guarda con ML-DSA-87 y SHA-512. La firma en el formato de SUNAT se aplica **solo en el último tramo**. *Explicar:* por qué su canal interno rechaza SHA-1 y el comprobante para SUNAT lo usa.
+47. **G8. Caja HSM open source.** Las claves privadas (certificado del emisor, ML-DSA, ML-KEM y la clave HMAC de G11) se crean y se usan dentro de **SoftHSM2** vía PKCS#11 con **Pkcs11Interop**, marcadas como **no exportables**: la aplicación pide «firma esto» o «descifra esto» y nunca recibe la clave. El PIN del HSM y la clave SOL viven en **Secrets Manager**. Rotación documentada: la clave nueva se publica antes de retirar la anterior. *En vivo:* un intento de exportar la clave falla. *Explicar:* por qué SoftHSM2 enseña la interfaz de un HSM real pero no su aislamiento físico, y qué usarían en producción (AWS KMS o CloudHSM).
+48. **G9. Ningún comprobante duplicado ni perdido.** La venta, su token único y el mensaje saliente se guardan en **una sola transacción (outbox)**; un token repetido se rechaza. Ante un timeout de `sendBill`, **no se reenvía a ciegas**: se consulta con `getStatusCdr` y solo se reenvía si SUNAT no lo tiene. *En vivo:* se detiene el gateway a mitad del envío y, al volver, el comprobante sale una sola vez. *Explicar:* qué habría pasado sin outbox y sin la consulta previa.
+49. **G10. El cliente lo ve sin recargar.** Cuando llega la CDR, el sistema contable avisa a la tienda por el canal JSON-RPC y la tienda publica por **SignalR** al cliente: «comprobante aceptado por SUNAT» o «rechazado», con el motivo. Conexión del hub autenticada con el token del usuario. *Explicar:* qué recibe el cliente si estaba desconectado cuando llegó la respuesta.
+50. **G11. Base de datos que detecta su propia manipulación.** Cada comprobante guarda un sello **HMAC-SHA-512** de sus campos en orden fijo más el sello del anterior (cadena de hashes), con la clave dentro del HSM; cada cierto intervalo el último sello se firma con ML-DSA-87 y se guarda en **S3 con Object Lock**. La aplicación verifica el sello antes de usar o enviar un comprobante, y un BackgroundService recorre la cadena completa. Lo manipulado queda **comprometido** y nunca se envía; alarma por **CloudWatch → SNS** y alerta en el panel por **SignalR**. *En vivo:* el profesor cambia un monto e inserta un comprobante falso desde un cliente SQL; ambos se bloquean y la alarma llega en **menos de un minuto**. *Explicar:* por qué cambiar un monto rompe esa fila y todas las siguientes.
+51. **G12. Base cifrada y cerrada.** RDS en la subred privada de datos, accesible solo desde el security group del sistema contable, con **TLS obligatorio**; cifrado en reposo con una clave de **KMS administrada por el grupo**; montos y cuentas cifrados por la aplicación con AES-256-GCM; respaldos, snapshots y réplicas cifrados. El usuario de la aplicación **no tiene permiso de DELETE ni de DDL**. *En vivo:* una conexión sin TLS es rechazada y un SELECT directo muestra los campos sensibles cifrados. *Explicar:* qué protege cada capa de cifrado y de quién.
+52. **G13. Pista de auditoría y trazabilidad.** Auditoría de negocio **solo de inserción** (quién emitió, aprobó y envió cada comprobante, y cuándo), con copia sellada en S3 con Object Lock y la auditoría nativa del motor activada. Un **id de correlación** sigue la venta desde la app hasta la CDR; los logs van a CloudWatch cifrados y **sin montos ni cuentas en claro**. *En vivo:* con el id de correlación se reconstruye el recorrido completo de una venta; un UPDATE sobre la auditoría falla. *Explicar:* por qué la pista de auditoría no puede vivir solo en la misma base que audita.
+53. **G14. Antifraude y antilavado, y la velocidad medida.** Antes de sellar y enviar, reglas de monto, frecuencia, horario atípico, **fraccionamiento** (muchas ventas pequeñas que suman un monto alto) y cuenta de destino nueva; lo marcado queda **retenido** para el oficial de cumplimiento y su decisión queda como caso en la auditoría. Además, un **ADR con números**: latencia p95 y bytes por venta de JSON-RPC + MessagePack frente a REST y gRPC con la misma venta. *En vivo:* el profesor dispara cada regla y la venta queda retenida con su motivo. *Explicar:* por qué eligieron un canal binario sobre TCP y qué perdieron frente a gRPC.
 
 ---
 
