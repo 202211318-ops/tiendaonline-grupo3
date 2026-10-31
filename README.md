@@ -26,7 +26,7 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ---
 
-# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 39 DESAFÍOS (20 PUNTOS) + 14 DE HONORES (SUNAT)
+# 📋 FASE 3 — URPONLINE: IA AGÉNTICA DE PUNTA A PUNTA, A ESCALA LATINOAMERICANA · 39 DESAFÍOS (20 PUNTOS) + 15 DE HONORES (SUNAT)
 
 ## ➡️ [Descargar la rúbrica: `RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx`](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Rubrica.docx)
 
@@ -141,7 +141,7 @@ El grupo es el **equipo de plataforma** que el directorio contrató para que el 
 | E. Capacidad y costo anticipados con Machine Learning | 27 a 32 | 3 |
 | F. La cadena de valor con IA agéntica, gobernada | 33 a 39 | 4 |
 | **Total** | **39** | **20** |
-| **G. Facturación electrónica con SUNAT y seguridad bancaria** | 40 a 53 | **Honores** |
+| **G. Facturación electrónica con SUNAT y seguridad bancaria** | 40 a 54 | **Honores** |
 
 > **Bloque G — Honores.** El grupo que lo supera completo, en vivo y explicado, **aprueba el curso con honores**: es el nivel de un equipo que trabaja en el core de un banco.
 
@@ -250,6 +250,7 @@ Se trabaja contra el **servicio beta de SUNAT** (`https://e-beta.sunat.gob.pe/ol
 51. **G12. Base cifrada y cerrada.** RDS en la subred privada de datos, accesible solo desde el security group del sistema contable, con **TLS obligatorio**; cifrado en reposo con una clave de **KMS administrada por el grupo**; montos y cuentas cifrados por la aplicación con AES-256-GCM; respaldos, snapshots y réplicas cifrados. El usuario de la aplicación **no tiene permiso de DELETE ni de DDL**. *En vivo:* una conexión sin TLS es rechazada y un SELECT directo muestra los campos sensibles cifrados. *Explicar:* qué protege cada capa de cifrado y de quién.
 52. **G13. Pista de auditoría y trazabilidad.** Auditoría de negocio **solo de inserción** (quién emitió, aprobó y envió cada comprobante, y cuándo), con copia sellada en S3 con Object Lock y la auditoría nativa del motor activada. Un **id de correlación** sigue la venta desde la app hasta la CDR; los logs van a CloudWatch cifrados y **sin montos ni cuentas en claro**. *En vivo:* con el id de correlación se reconstruye el recorrido completo de una venta; un UPDATE sobre la auditoría falla. *Explicar:* por qué la pista de auditoría no puede vivir solo en la misma base que audita.
 53. **G14. Antifraude y antilavado, y la velocidad medida.** Antes de sellar y enviar, reglas de monto, frecuencia, horario atípico, **fraccionamiento** (muchas ventas pequeñas que suman un monto alto) y cuenta de destino nueva; lo marcado queda **retenido** para el oficial de cumplimiento y su decisión queda como caso en la auditoría. Además, un **ADR con números**: latencia p95 y bytes por venta de JSON-RPC + MessagePack frente a REST y gRPC con la misma venta. *En vivo:* el profesor dispara cada regla y la venta queda retenida con su motivo. *Explicar:* por qué eligieron un canal binario sobre TCP y qué perdieron frente a gRPC.
+54. **G15. Consenso Raft implementado a mano.** El registro de comprobantes del sistema contable **no puede depender de un solo nodo**: corre en **tres nodos, uno por zona**, y el grupo **implementa Raft desde cero** (sin etcd, sin bibliotecas de consenso): elección de líder con plazos aleatorios, replicación del log, confirmación por **mayoría** y persistencia del término y del voto antes de responder. **Solo el líder envía a SUNAT**, y un comprobante se envía solo cuando su entrada está confirmada por la mayoría. Los nodos se hablan por el mismo canal JSON-RPC + MessagePack con TLS mutuo. *En vivo:* con ventas entrando, (1) se apaga el líder y se elige otro sin perder ni duplicar comprobantes; (2) una regla de la NACL **aísla un nodo** (partición) y el nodo aislado no puede confirmar nada ni enviar a SUNAT; (3) al volver, se pone al día con el log del líder. *Explicar:* por qué hace falta mayoría y no basta con dos nodos, qué pasaría si dos nodos se creyeran líderes a la vez, y qué garantiza el término de Raft.
 
 ---
 
