@@ -254,6 +254,43 @@ dotnet run --project contable -- probar-beta
 # ... Tienda <- SUNAT ACEPTO F001-93474951 · codigo 0 · La Factura numero F001-93474951, ha sido aceptada
 ```
 
+#### 🧪 Pruebas con SUNAT: cómo se hicieron y qué resultó (31 de octubre de 2026)
+
+**Dónde:** el **servicio beta** de SUNAT, `https://e-beta.sunat.gob.pe/ol-ti-itcpfegem-beta/billService`. Según el *Manual del Programador* (punto 2.3), el beta «solo permite realizar pruebas de las estructuras XML» y no exige un certificado registrado en SUNAT; las credenciales son públicas: `[RUC]MODDATOS` / `MODDATOS`. Nunca se envió nada a producción.
+
+**Con qué datos:** emisor `20123456789` (URPONLINE S.A.C.), cliente `20100066603`, serie `F001` y un número distinto en cada corrida. El certificado es **autofirmado**, generado al arrancar, con el RUC en el campo OU como pide el manual (punto 3.1); en producción se usa el certificado digital del emisor comunicado a SUNAT.
+
+| Prueba | Cómo se hizo | Resultado |
+|---|---|---|
+| Factura firmada con **rsa-sha256** | `dotnet run --project contable -- probar-beta`: el programa levanta el sistema contable, se conecta como la tienda por JSON-RPC, emite una factura UBL 2.1 firmada y la envía con `sendBill` y *UsernameToken* | SUNAT respondió la CDR con **código 0**: «La Factura numero F001-93474951, ha sido aceptada» |
+| Factura firmada con **rsa-sha1** | La misma prueba con la variable `Sunat__AlgoritmoFirma=sha1` | **Código 0**: F001-93474965 aceptada. El beta acepta SHA-1 y SHA-256; por eso G7 pide SHA-256 |
+| **Tres nodos con Raft** | `dotnet run --project contable -- probar-beta-raft`: tres nodos del sistema contable en la misma PC, hablándose por TCP; se factura, se apaga el líder y se vuelve a facturar | Ver la salida de abajo: las **dos facturas aceptadas (código 0)**, la segunda con el nuevo líder |
+
+```
+Líder elegido: n1 (término 3)
+Tienda -> n1: F001-98981912 RECIBIDO (replicada en la mayoría)
+Tienda <- SUNAT ACEPTO la primera factura F001-98981912 · código 0 · La Factura numero F001-98981912, ha sido aceptada
+Las tres copias del log: n1=1 · n2=1 · n3=1
+Se apaga el líder n1
+Nuevo líder: n3 (término 4); su log tiene 1 entrada(s)
+Tienda -> n2: Este nodo no es el líder; el líder es n3.
+Tienda -> n3: F001-98982576 RECIBIDO (replicada en la mayoría)
+Tienda <- SUNAT ACEPTO la segunda factura F001-98982576 · código 0 · La Factura numero F001-98982576, ha sido aceptada
+```
+
+**Pruebas automáticas** (`dotnet test tests/TiendaOnline.Tests.csproj`). No llaman a SUNAT: la reemplazan por un enviador de prueba que registra lo que recibe, para poder correrlas en cualquier PC y en el pipeline.
+
+| Archivo | Qué comprueba |
+|---|---|
+| `tests/ContableTests.cs` | IGV y totales de la factura; la firma va en `ext:ExtensionContent` y verifica con SHA-256 y con SHA-1; **un monto alterado después de firmar no verifica**; un SOAP Fault es un rechazo con su código; la tienda recibe «RECIBIDO» y después el resultado **por el mismo socket** |
+| `tests/RaftTests.cs` | Un solo líder; replicación en el mismo orden; solo el líder acepta ventas; caída del líder sin perder lo confirmado; **el líder aislado por una partición no confirma** y al volver se pone al día; término, voto y log sobreviven a un reinicio |
+| `tests/RegistroReplicadoTests.cs` | Con tres nodos, la venta queda confirmada en los tres y **SUNAT la recibe una sola vez** (solo el líder envía); un seguidor la rechaza |
+| `tests/SignalRTests.cs` | Un servidor web real con el hub y dos clientes SignalR reales por WebSockets: **el aviso de SUNAT llega solo al navegador dueño del pedido** |
+
+Resultado el 31 de octubre de 2026: las **22 pruebas** del Bloque G pasan, y las de Raft, del registro replicado y de SignalR pasaron en todas las repeticiones. De la suite completa pasan 52 de 67; las 15 restantes son pruebas de fases anteriores que necesitan PostgreSQL en Docker.
+
+**Lo que estas pruebas no demuestran:** que SUNAT acepte el comprobante en **producción** (eso exige el certificado del emisor y la clave SOL reales), ni el comportamiento en AWS con firewall y NAT entre subredes: eso lo demuestra cada grupo en su cuenta.
+
 Funciona, pero **sin ninguna de las protecciones del bloque**: el canal va en claro, la clave del certificado está en memoria, una venta repetida se envía dos veces y un solo nodo lo sostiene todo. Cada desafío G es una de esas protecciones.
 
 40. **G1. Canal binario tienda → sistema contable.** JSON-RPC con **StreamJsonRpc** sobre `TcpClient`/`TcpListener`, con `LengthHeaderMessageHandler` (prefijo de 4 bytes big-endian) y **MessagePack** configurado con `MessagePackSecurity.UntrustedData` y tamaño máximo de mensaje. La tienda llama `EmitirComprobanteAsync` y el sistema contable responde `NotificarResultadoAsync` **por el mismo socket**. *En vivo:* una venta sale de la tienda y su resultado vuelve por el mismo canal. *Explicar:* por qué el resultado tiene que volver por el mismo socket cuando hay un NAT en el medio.
