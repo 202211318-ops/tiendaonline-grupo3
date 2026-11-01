@@ -32,6 +32,10 @@ Este repositorio del curso es **solo de lectura**: aquí no puedes subir cambios
 
 ## 📊 [Ver la presentación de la fase 3 (PDF): el caso, la arquitectura de alto nivel y detallada, por qué cada componente y los 55 desafíos explicados uno por uno](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/URPOnline_Fase3_Presentacion.pdf)
 
+## 🐳 [Ver la presentación de Docker, Kubernetes y Fargate (PDF): qué es cada uno, beneficios, servicios de AWS y diagramas](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/Docker_Kubernetes_Fargate_para_explicar.pdf)
+
+## 🔐 [Ver la presentación de JSON-RPC y la firma del comprobante para SUNAT (PDF): el canal binario y cómo se firma la factura](RUTA_DEL_CURSO/09_FASE3_IA_MOVIL_CONTENEDORES/JSONRPC_y_firma_SUNAT_para_explicar.pdf)
+
 ### 👥 Grupos de **7 a 10** integrantes · 🎤 **Presentación: sábado 21 de noviembre de 2026** · ⏱️ **40 minutos por grupo** · participan **todos** los integrantes · **todo en vivo**
 
 > 🎯 **Objetivo:** que los alumnos construyan un **portafolio de proyectos con experiencias y casos reales** que les permita usarlo en **entrevistas y evaluaciones de trabajo**.
