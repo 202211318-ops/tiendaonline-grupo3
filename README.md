@@ -287,7 +287,7 @@ Tienda <- SUNAT ACEPTO la segunda factura F001-98982576 · código 0 · La Factu
 | `tests/RegistroReplicadoTests.cs` | Con tres nodos, la venta queda confirmada en los tres y **SUNAT la recibe una sola vez** (solo el líder envía); un seguidor la rechaza |
 | `tests/SignalRTests.cs` | Un servidor web real con el hub y dos clientes SignalR reales por WebSockets: **el aviso de SUNAT llega solo al navegador dueño del pedido** |
 
-Resultado el 31 de octubre de 2026: las **22 pruebas** del Bloque G pasan, y las de Raft, del registro replicado y de SignalR pasaron en todas las repeticiones. De la suite completa pasan 52 de 67; las 15 restantes son pruebas de fases anteriores que necesitan PostgreSQL en Docker.
+Resultado el 31 de octubre de 2026: las **16 pruebas** del Bloque G pasan, y las de Raft, del registro replicado y de SignalR pasaron en todas las repeticiones. De la suite completa pasan 52 de 67; las 15 restantes son pruebas de fases anteriores que necesitan PostgreSQL en Docker.
 
 **Lo que estas pruebas no demuestran:** que SUNAT acepte el comprobante en **producción** (eso exige el certificado del emisor y la clave SOL reales), ni el comportamiento en AWS con firewall y NAT entre subredes: eso lo demuestra cada grupo en su cuenta.
 
