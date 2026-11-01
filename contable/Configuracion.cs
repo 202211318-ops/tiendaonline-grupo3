@@ -10,8 +10,14 @@ namespace URPOnline.Contable;
 // (Sunat__Clave, Sunat__CertificadoClave...). En AWS la clave SOL y el PIN del HSM van en Secrets Manager (G8).
 // Las credenciales de appsettings.json son las PUBLICAS del servicio beta de SUNAT ([RUC]MODDATOS / MODDATOS).
 public sealed record Configuracion(int Puerto, Uri UrlSunat, Emisor Emisor, CredencialSol Credencial,
-    decimal TasaIgv, string AlgoritmoFirma, string CertificadoPfx, string CertificadoClave)
+    decimal TasaIgv, string AlgoritmoFirma, string CertificadoPfx, string CertificadoClave, string RaftId, string RaftNodos)
 {
+    // Raft (G15): «n1=10.0.1.10:7600,n2=10.0.2.10:7600,n3=10.0.3.10:7600». Sin Raft:Id, un solo nodo sin réplica.
+    public Dictionary<string, System.Net.IPEndPoint> NodosRaft() => RaftNodos
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(n => n.Split('='))
+        .ToDictionary(p => p[0], p => System.Net.IPEndPoint.Parse(p[1]));
+
     public bool EsBeta => UrlSunat.Host.StartsWith("e-beta.", StringComparison.OrdinalIgnoreCase);
 
     public static Configuracion Cargar(string ruta)
@@ -29,7 +35,9 @@ public sealed record Configuracion(int Puerto, Uri UrlSunat, Emisor Emisor, Cred
             decimal.Parse(Valor("Sunat", "TasaIgv"), CultureInfo.InvariantCulture),
             Valor("Sunat", "AlgoritmoFirma"),
             Valor("Sunat", "CertificadoPfx"),
-            Valor("Sunat", "CertificadoClave"));
+            Valor("Sunat", "CertificadoClave"),
+            Valor("Raft", "Id"),
+            Valor("Raft", "Nodos"));
     }
 
     // Produccion: el certificado digital del emisor, comunicado a SUNAT (Manual, punto 3.1).

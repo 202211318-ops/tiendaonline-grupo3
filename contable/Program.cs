@@ -6,6 +6,9 @@
 //   dotnet run --project contable -- servidor       Escucha a la tienda en Contable:Puerto.
 //   dotnet run --project contable -- probar-beta    Levanta el servidor, se conecta como la tienda, emite UNA
 //                                                   factura contra el servicio BETA de SUNAT e imprime la CDR.
+//   dotnet run --project contable -- probar-beta-raft   Tres nodos con Raft por TCP en esta PC: factura, apaga al
+//                                                   líder, se elige otro y factura de nuevo (SUNAT beta).
+//   Con Raft__Id y Raft__Nodos, «servidor» corre UN nodo del registro replicado (uno por zona en AWS).
 // Nunca contra produccion de SUNAT sin el certificado digital del emisor y sin la orden del profesor.
 
 using System.Net;
@@ -30,9 +33,22 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; fin.Cancel(); };
 
 if (modo == "servidor")
 {
-    await CanalJsonRpc.EscucharAsync(new IPEndPoint(IPAddress.Any, cfg.Puerto), CrearFacade, Log, fin.Token);
+    if (string.IsNullOrWhiteSpace(cfg.RaftId))
+    {
+        await CanalJsonRpc.EscucharAsync(new IPEndPoint(IPAddress.Any, cfg.Puerto), CrearFacade, Log, fin.Token);
+        return 0;
+    }
+    // Un nodo del sistema contable replicado con Raft (G15): escucha a la tienda en Contable:Puerto y a los
+    // otros nodos en su dirección de Raft:Nodos.
+    var nodos = cfg.NodosRaft();
+    var (facadeRaft, nodoRaft, raftEscucha) = await NodoContable.IniciarAsync(cfg.RaftId, nodos, gateway, Log,
+        Path.Combine(AppContext.BaseDirectory, $"raft-{cfg.RaftId}.json"), fin.Token);
+    Log($"Nodo Raft {cfg.RaftId} · Raft en {nodos[cfg.RaftId]} · tienda en {cfg.Puerto}");
+    await Task.WhenAll(raftEscucha, CanalJsonRpc.EscucharAsync(new IPEndPoint(IPAddress.Any, cfg.Puerto), facadeRaft, Log, fin.Token));
+    await nodoRaft.DisposeAsync();
     return 0;
 }
+if (modo == "probar-beta-raft") return await PruebaRaft.CorrerAsync(cfg, gateway, Log);
 if (modo != "probar-beta") { Console.Error.WriteLine("Modo desconocido: " + modo); return 2; }
 if (!cfg.EsBeta) { Console.Error.WriteLine("probar-beta solo se ejecuta contra el servicio beta de SUNAT."); return 2; }
 

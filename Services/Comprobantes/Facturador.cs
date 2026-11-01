@@ -35,37 +35,51 @@ public sealed class Facturador(IConfiguration config, AvisoDeSunat aviso, ILogge
             config["Contable:RucCliente"] ?? "", config["Contable:RazonSocialCliente"] ?? "", "PEN", lineas);
     }
 
+    // Contable:Host acepta un nodo («10.0.1.10») o los tres nodos con Raft («10.0.1.10,10.0.2.10,10.0.3.10»):
+    // se prueban en orden hasta que uno (el líder) acepta; un seguidor responde «no es el líder».
+    int actual;
+
     public async Task<Recepcion?> EmitirAsync(Order pedido, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(config["Contable:Host"])) return null;
-        try
+        var hosts = (config["Contable:Host"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (hosts.Length == 0) return null;
+        var venta = ArmarVenta(pedido);
+        for (var intento = 0; intento < hosts.Length; intento++)
         {
-            var conexion = await ConexionAsync(ct);
-            return await conexion.EmitirComprobanteAsync(ArmarVenta(pedido), ct);
+            var host = hosts[(actual + intento) % hosts.Length];
+            try
+            {
+                var conexion = await ConexionAsync(host, ct);
+                var recepcion = await conexion.EmitirComprobanteAsync(venta, ct);
+                actual = (actual + intento) % hosts.Length;   // el próximo pedido empieza por este nodo
+                return recepcion;
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                log.LogWarning("El nodo contable {Host} no aceptó el pedido {Pedido}: {Motivo}", host, pedido.Id, e.Message);
+                await CerrarAsync();
+            }
         }
-        catch (Exception e) when (e is not OperationCanceledException)
-        {
-            // La venta ya está guardada: si el contable no responde, se registra y se reintenta en el próximo
-            // pedido con una conexión nueva. Que ninguna factura quede sin emitir es el desafío G9 (outbox).
-            log.LogError(e, "No se pudo enviar el pedido {Pedido} al sistema contable", pedido.Id);
-            await CerrarAsync();
-            return null;
-        }
+        // La venta ya está guardada: ningún nodo la aceptó. Que ninguna factura quede sin emitir es el desafío G9 (outbox).
+        log.LogError("Ningún nodo contable aceptó el pedido {Pedido}", pedido.Id);
+        return null;
     }
 
-    async Task<IContabilidad> ConexionAsync(CancellationToken ct)
+    async Task<IContabilidad> ConexionAsync(string host, CancellationToken ct)
     {
         await cerrojo.WaitAsync(ct);
         try
         {
-            if (contable is not null && rpc is { IsDisposed: false }) return contable;
-            var (c, r) = await CanalJsonRpc.ConectarAsync(config["Contable:Host"]!, config.GetValue("Contable:Puerto", 7443), aviso, ct);
-            (contable, rpc) = (c, r);
-            log.LogInformation("Conectado al sistema contable {Host}", config["Contable:Host"]);
+            if (contable is not null && rpc is { IsDisposed: false } && conectadoA == host) return contable;
+            rpc?.Dispose();
+            var (c, r) = await CanalJsonRpc.ConectarAsync(host, config.GetValue("Contable:Puerto", 7443), aviso, ct);
+            (contable, rpc, conectadoA) = (c, r, host);
+            log.LogInformation("Conectado al sistema contable {Host}", host);
             return c;
         }
         finally { cerrojo.Release(); }
     }
+    string? conectadoA;
 
     async Task CerrarAsync()
     {

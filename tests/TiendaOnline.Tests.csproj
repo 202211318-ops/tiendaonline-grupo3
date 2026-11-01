@@ -11,6 +11,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <!-- PostgreSQL real (pgvector) en un contenedor para las pruebas de pagos, correos y agentes programados -->
     <PackageReference Include="Testcontainers.PostgreSql" Version="3.10.0" />
+    <!-- Fase 3 (G10): cliente SignalR real para probar el hub de la tienda. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.14" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\TiendaOnline.csproj" />
