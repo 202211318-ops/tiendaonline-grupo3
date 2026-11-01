@@ -5,6 +5,7 @@
  <p>Tu pedido <b>#@ViewBag.OrderId</b> quedó registrado en PostgreSQL con estado <b>PENDIENTE_PAGO</b>.</p>
  <p class="hint">Esta aplicación es un laboratorio educativo: no procesa pagos reales.</p>
  @if (TempData["Message"] is string mensaje) { <p class="hint"><b>@mensaje</b></p> }
+ <p id="sunat" class="hint">Comprobante electrónico: enviado al sistema contable, esperando la respuesta de SUNAT…</p>
  <a class="btn-cart inline" asp-controller="Home" asp-action="Index">Seguir comprando</a>
  <form asp-action="Cancel" method="post" class="cancel-form">
   <input type="hidden" name="id" value="@ViewBag.OrderId" />
@@ -16,3 +17,21 @@
   <button type="submit" class="btn-secondary">Cancelar pedido</button>
  </form>
 </div>
+<!-- Fase 3 (G10): el resultado de SUNAT llega por SignalR, sin recargar la página. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+<script>
+ (async () => {
+  const aviso = document.getElementById("sunat");
+  const conexion = new signalR.HubConnectionBuilder().withUrl("/hubs/comprobantes").withAutomaticReconnect().build();
+  conexion.on("ResultadoComprobante", r => {
+   aviso.innerHTML = r.aceptado
+    ? "<b>Comprobante " + r.comprobante + " aceptado por SUNAT.</b>"
+    : "<b>SUNAT rechazó el comprobante " + r.comprobante + ":</b> " + r.descripcion;
+  });
+  // Al reconectarse se vuelve a unir al grupo del pedido. Lo que SUNAT respondió mientras no había conexión
+  // no se reenvía: recuperarlo desde la base al reconectarse es parte del desafío G10.
+  conexion.onreconnected(() => conexion.invoke("SeguirPedido", @ViewBag.OrderId));
+  try { await conexion.start(); await conexion.invoke("SeguirPedido", @ViewBag.OrderId); }
+  catch (e) { aviso.textContent = "No se pudo abrir el aviso en tiempo real: " + e; }
+ })();
+</script>

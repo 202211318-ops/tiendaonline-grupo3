@@ -7,6 +7,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY TiendaOnline.csproj .
+# Fase 3, Bloque G: la tienda usa el contrato y el canal JSON-RPC del sistema contable.
+COPY contable/URPOnline.Contable.csproj contable/packages.lock.json contable/
 RUN dotnet restore TiendaOnline.csproj
 COPY . .
 RUN dotnet publish TiendaOnline.csproj -c Release -o /app --no-restore

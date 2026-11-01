@@ -217,6 +217,16 @@
           "StackExchange.Redis": "2.7.27"
         }
       },
+      "Microsoft.AspNetCore.SignalR.StackExchangeRedis": {
+        "type": "Transitive",
+        "resolved": "10.0.14",
+        "contentHash": "GO/fLS1/9UWayuLackhLraVdhxfPa/X+s74sNMu2zYhrQzMgYtIfJajjLDTssmBgFxVDja/2Hw6TwIRbk9PLUQ==",
+        "dependencies": {
+          "MessagePack": "2.5.303",
+          "Microsoft.Extensions.Options": "10.0.14",
+          "StackExchange.Redis": "2.7.27"
+        }
+      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "17.11.1",
@@ -685,11 +695,13 @@
           "AWSSDK.SecretsManager": "[3.7.400.35, )",
           "AWSSDK.SecurityToken": "[3.7.400.35, )",
           "Microsoft.AspNetCore.DataProtection.StackExchangeRedis": "[10.0.14, )",
+          "Microsoft.AspNetCore.SignalR.StackExchangeRedis": "[10.0.14, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.14, )",
           "Microsoft.Extensions.Caching.StackExchangeRedis": "[10.0.14, )",
           "Microsoft.ML.OnnxRuntime": "[1.30.0, )",
           "Microsoft.ML.Tokenizers": "[2.0.0, )",
-          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
+          "URPOnline.Contable": "[1.0.0, )"
         }
       },
       "urponline.agentes": {

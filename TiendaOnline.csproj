@@ -8,6 +8,8 @@
     <Content Update="Data\llm\modelos.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Remove="Data\llm\settings.local.json" />
   </ItemGroup>
+  <!-- Fase 3, Bloque G: el contrato y el canal JSON-RPC del sistema contable. -->
+  <ItemGroup><ProjectReference Include="contable/URPOnline.Contable.csproj" /></ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.StackExchangeRedis" Version="10.0.14" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14">
@@ -19,6 +21,8 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.14" />
+    <!-- Fase 3 (G10): backplane Redis de SignalR, para que el aviso llegue con varios pods. -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.14" />
     <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.400" />
     <PackageReference Include="AWSSDK.S3" Version="3.7.401" />
     <PackageReference Include="AWSSDK.SecretsManager" Version="3.7.400.35" />

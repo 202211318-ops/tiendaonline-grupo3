@@ -65,11 +65,18 @@ builder.Services.AddScoped<TiendaOnline.Services.Agents.SlaSeeder>();
 builder.Services.AddScoped<TiendaOnline.Services.Comida.ComidaStore>();
 builder.Services.AddScoped<TiendaOnline.Services.Comida.SoporteDelivery>();
 builder.Services.AddScoped<TiendaOnline.Services.Comida.ComidaSeeder>();
+// Fase 3, Bloque G: factura de cada pedido en el sistema contable (JSON-RPC) y aviso al navegador por SignalR (G10).
+// Con Redis, el backplane hace que el aviso llegue aunque el navegador esté conectado a otro pod.
+var signalR=builder.Services.AddSignalR();
+if(!string.IsNullOrWhiteSpace(redis)) signalR.AddStackExchangeRedis(redis);
+builder.Services.AddSingleton<TiendaOnline.Services.Comprobantes.AvisoDeSunat>();
+builder.Services.AddSingleton<TiendaOnline.Services.Comprobantes.Facturador>();
 var app=builder.Build();
 if(!app.Environment.IsDevelopment()){app.UseExceptionHandler("/Home/Error");app.UseHsts();}
 app.UseForwardedHeaders(new ForwardedHeadersOptions {ForwardedHeaders=ForwardedHeaders.XForwardedFor|ForwardedHeaders.XForwardedProto,KnownIPNetworks={ },KnownProxies={ }});
 app.UseStaticFiles();app.UseRouting();app.UseSession();
 app.MapGet("/health",()=>Results.Ok(new{status="ok"}));
+app.MapHub<TiendaOnline.Services.Comprobantes.ComprobantesHub>(TiendaOnline.Services.Comprobantes.ComprobantesHub.Ruta);
 app.MapControllerRoute("default","{controller=Home}/{action=Index}/{id?}");
 if(app.Configuration.GetValue<bool>("InitializeDatabase")){
  using var scope=app.Services.CreateScope();var database=scope.ServiceProvider.GetRequiredService<ShopDbContext>();

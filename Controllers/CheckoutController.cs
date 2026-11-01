@@ -5,9 +5,10 @@ using TiendaOnline.Data;
 using TiendaOnline.Models;
 using TiendaOnline.Services;
 namespace TiendaOnline.Controllers;
-public class CheckoutController(ShopDbContext db,CartService cart,BusinessEvents events,BusinessMetrics metrics,StoreEventPublisher bus):Controller {
+public class CheckoutController(ShopDbContext db,CartService cart,BusinessEvents events,BusinessMetrics metrics,StoreEventPublisher bus,
+ TiendaOnline.Services.Comprobantes.Facturador facturador):Controller {
  // Pedidos creados en esta sesión: solo ellos se pueden cancelar desde este navegador.
- const string MisPedidos="mis-pedidos";
+ const string MisPedidos=TiendaOnline.Services.Comprobantes.ComprobantesHub.ClaveSesion;
  [HttpGet] public async Task<IActionResult> Index() {
   var vm=await cart.ViewAsync(HttpContext.Session);
   if(vm.Lines.Count==0) return RedirectToAction("Index","Cart");
@@ -50,6 +51,8 @@ public class CheckoutController(ShopDbContext db,CartService cart,BusinessEvents
     pedidoId=order.Id,total=order.Total,sesion=StoreEventPublisher.HashSession(HttpContext.Session.Id),ocurrioUtc=DateTime.UtcNow,
     items=order.Items.Select(i=>new EventItem(i.ProductId,i.Quantity,i.UnitPrice))},HttpContext.RequestAborted);
    await metrics.OrderCreatedAsync(order.Total,HttpContext.RequestAborted);
+   // Fase 3 (G5, G10): la factura va al sistema contable; el resultado de SUNAT llega a Success por SignalR.
+   await facturador.EmitirAsync(order,HttpContext.RequestAborted);
    return RedirectToAction("Success",new{id=order.Id});
   } catch {
    await tx.RollbackAsync(); throw;
