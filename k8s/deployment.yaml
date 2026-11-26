@@ -27,7 +27,7 @@ data:
   Database__SecretArn: "arn:aws:secretsmanager:us-east-2:226225708455:secret:URPOnlineLab/rds-postgres-2xjnWF"
   AWS__Region: "us-east-2"
   Metrics__CloudWatchEnabled: "true"
-  InitializeDatabase: "true"
+  InitializeDatabase: "false"
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
