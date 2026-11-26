@@ -21,7 +21,7 @@ jobs:
       - name: Configurar credenciales AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::226225708455:role/urponline-github-deploy-tiendaonline-grupo3
           aws-region: us-east-2
 
       - name: Iniciar sesión en Amazon ECR
