@@ -10,7 +10,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout código
+      - name: Checkout cÃ³digo
         uses: actions/checkout@v4
 
       - name: Descargar modelo ONNX
@@ -24,7 +24,7 @@ jobs:
           role-to-assume: arn:aws:iam::226225708455:role/urponline-github-deploy-tiendaonline-grupo3
           aws-region: us-east-2
 
-      - name: Iniciar sesión en Amazon ECR
+      - name: Iniciar sesiÃ³n en Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
