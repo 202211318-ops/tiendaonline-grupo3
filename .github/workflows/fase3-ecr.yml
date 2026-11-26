@@ -1,0 +1,37 @@
+name: Fase 3 - Build y Push a ECR
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Descargar modelo ONNX
+        run: |
+          sed -i 's/\r$//' scripts/*.sh
+          bash scripts/descargar-modelo.sh
+
+      - name: Conectar con AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Iniciar sesión en Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Construir y subir imagen a ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: urponline
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:v1 .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:v1
