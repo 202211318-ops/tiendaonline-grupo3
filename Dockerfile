@@ -11,7 +11,7 @@ COPY TiendaOnline.csproj .
 COPY contable/URPOnline.Contable.csproj contable/packages.lock.json contable/
 RUN dotnet restore TiendaOnline.csproj
 COPY . .
-RUN dotnet publish TiendaOnline.csproj -c Release -o /app --no-restore
+RUN dotnet publish TiendaOnline.csproj -c Release -o /app --no-restore -p:ErrorOnDuplicatePublishOutputFiles=false
 
 # ---------- runtime ----------
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
