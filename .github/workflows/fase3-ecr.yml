@@ -2,6 +2,10 @@ name: Fase 3 - Build y Push a ECR
 on:
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -14,12 +18,10 @@ jobs:
           sed -i 's/\r$//' scripts/*.sh
           bash scripts/descargar-modelo.sh
 
-      - name: Configurar credenciales AWS
+      - name: Configurar credenciales AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          role-to-assume: arn:aws:iam::226225708455:role/urponline-github-deploy-tiendaonline-grupo3
           aws-region: us-east-2
 
       - name: Iniciar sesión en Amazon ECR
