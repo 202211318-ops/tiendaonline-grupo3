@@ -28,10 +28,18 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Construir y subir imagen a ECR
+      - name: Construir y subir imagen App a ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: urponline
         run: |
           docker build --provenance=false -t $ECR_REGISTRY/$ECR_REPOSITORY:v1 .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:v1
+
+      - name: Construir y subir imagen ML Predictor a ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: urponline-ml
+        run: |
+          docker build --provenance=false -t $ECR_REGISTRY/$ECR_REPOSITORY:v1 ml/
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:v1
