@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Presupuesto minimo URPOnline Fase 3 (alerta desde $0.01)
+Parameters:
+  Correo:
+    Type: String
+  MontoUSD:
+    Type: Number
+    Default: 1
+Resources:
+  PresupuestoMensual:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: urponline-fase3-budget
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MontoUSD
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 1
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref Correo
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref Correo
